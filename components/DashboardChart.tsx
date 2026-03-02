@@ -10,14 +10,14 @@ export default function DashboardChart({ data }: Props) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+        <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" />
         <XAxis dataKey="dia" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
         <Tooltip
-          contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
-          cursor={{ fill: '#f8fafc' }}
+          contentStyle={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', color: '#e2e8f0' }}
+          cursor={{ fill: '#1a1a1a' }}
         />
-        <Bar dataKey="total" name="Tasks" fill="#2563eb" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="total" name="Content" fill="#6366f1" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )
