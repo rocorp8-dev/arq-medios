@@ -50,11 +50,13 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
   const [saved, setSaved] = useState(false)
   const [sent, setSent] = useState(false)
   const [tab, setTab] = useState<'edit' | 'preview' | 'media'>('preview')
-  const [mediaTab, setMediaTab] = useState<'generated' | 'uploads' | 'combined' | 'favorites'>('generated')
+  const [mediaTab, setMediaTab] = useState<'generated' | 'uploads' | 'combined' | 'videos' | 'favorites'>('generated')
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [mediaList, setMediaList] = useState<any[]>([])
   const [uploading, setUploading] = useState(false)
   const [combining, setCombining] = useState(false)
+  const [videoGenerating, setVideoGenerating] = useState(false)
+  const [videoPrompt, setVideoPrompt] = useState('')
   const [combinePrompt, setCombinePrompt] = useState('')
   const [user, setUser] = useState<any>(null)
   const supabase = createClient()
@@ -171,6 +173,30 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
       alert('Error de conexión')
     } finally {
       setCombining(false)
+    }
+  }
+
+  async function handleGenerateVideo() {
+    if (!videoPrompt) return
+    setVideoGenerating(true)
+    try {
+      const res = await fetch('/api/generate/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: videoPrompt })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert('Generación de video iniciada (Request ID: ' + data.request_id + '). Aparecerá en tu galería en unos segundos.')
+        setVideoPrompt('')
+        fetchMedia()
+      } else {
+        alert('Error al generar video')
+      }
+    } catch {
+      alert('Error de conexión')
+    } finally {
+      setVideoGenerating(false)
     }
   }
 
@@ -568,6 +594,9 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
             <button onClick={() => setMediaTab('combined')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition whitespace-nowrap ${mediaTab === 'combined' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
               <RefreshCw size={16} /> Combined <span className="text-[10px] opacity-60 ml-1">{mediaList.filter(m => m.type === 'combined').length}</span>
             </button>
+            <button onClick={() => setMediaTab('videos')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition whitespace-nowrap ${mediaTab === 'videos' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+              <Video size={16} /> Videos <span className="text-[10px] opacity-60 ml-1">{mediaList.filter(m => m.type === 'video').length}</span>
+            </button>
             <button onClick={() => setMediaTab('favorites')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition whitespace-nowrap ${mediaTab === 'favorites' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
               <Star size={16} /> Favorites
             </button>
@@ -586,6 +615,36 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
             </label>
           )}
 
+          {/* Video Generation Dropzone */}
+          {mediaTab === 'videos' && (
+            <div className="bg-[#111] border-2 border-indigo-500/20 rounded-2xl p-8 flex flex-col md:flex-row items-center gap-6 group transition duration-500">
+              <div className="bg-indigo-500/10 h-20 w-20 rounded-2xl flex items-center justify-center flex-shrink-0 animate-pulse">
+                <Video className="text-indigo-400" size={32} />
+              </div>
+              <div className="flex-1 space-y-2 text-center md:text-left">
+                <h4 className="text-slate-100 font-bold text-lg">Video Hub (fal.ai)</h4>
+                <p className="text-sm text-slate-500 max-w-md">Describe una escena cinematográfica de 5 segundos. Usamos Hailuo 02 por defecto para máxima calidad.</p>
+                <div className="flex gap-2 mt-4 p-1 bg-[#0a0a0a] rounded-xl border border-[#2a2a2a] focus-within:border-indigo-500/50 transition duration-300">
+                  <input
+                    type="text"
+                    placeholder="Ej: Un arquitecto futurista diseñando en VR con hologramas indigos..."
+                    value={videoPrompt}
+                    onChange={e => setVideoPrompt(e.target.value)}
+                    className="flex-1 bg-transparent border-0 outline-none text-slate-200 px-4 py-2 text-sm focus:ring-0"
+                  />
+                  <button
+                    disabled={videoGenerating || !videoPrompt}
+                    onClick={handleGenerateVideo}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-6 py-2 rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+                  >
+                    {videoGenerating ? <RefreshCw className="animate-spin" size={14} /> : <Plus size={14} />}
+                    {videoGenerating ? 'Generando...' : 'Generar Video'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Media Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {mediaTab === 'generated' && (body as CarouselSlide[]).filter(s => s.image_url).map((slide, i) => (
@@ -596,10 +655,11 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
                 onToggle={() => toggleSelection(slide.image_url!)}
               />
             ))}
-            {(mediaTab === 'uploads' || mediaTab === 'combined' || mediaTab === 'favorites') && mediaList.filter(m => (mediaTab === 'favorites' ? m.favorite : (m.type === mediaTab.slice(0, -1) || m.type === mediaTab))).map((media, i) => (
+            {(mediaTab === 'uploads' || mediaTab === 'combined' || mediaTab === 'videos' || mediaTab === 'favorites') && mediaList.filter(m => (mediaTab === 'favorites' ? m.favorite : (m.type === mediaTab.slice(0, -1) || m.type === mediaTab))).map((media, i) => (
               <MediaCard
                 key={media.id}
                 url={media.url}
+                type={media.type}
                 favorite={media.favorite}
                 selected={selectedUrls.includes(media.url)}
                 onToggle={() => toggleSelection(media.url)}
@@ -614,9 +674,10 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
   )
 }
 
-function MediaCard({ url, selected, favorite, onToggle, onFavorite, onDelete }: {
+function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDelete }: {
   url: string,
   selected: boolean,
+  type?: 'upload' | 'combined' | 'generated' | 'video',
   favorite?: boolean,
   onToggle: () => void,
   onFavorite?: () => void,
@@ -626,7 +687,11 @@ function MediaCard({ url, selected, favorite, onToggle, onFavorite, onDelete }: 
     <div
       className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all duration-300 ${selected ? 'border-indigo-500 scale-95 ring-4 ring-indigo-500/20' : 'border-transparent hover:border-slate-700 hover:scale-[1.02]'}`}
     >
-      <NextImage src={url} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw" onClick={onToggle} />
+      {type === 'video' ? (
+        <video src={url} className="w-full h-full object-cover" muted loop onMouseOver={e => e.currentTarget.play()} onMouseOut={e => e.currentTarget.pause()} onClick={onToggle} />
+      ) : (
+        <NextImage src={url} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw" onClick={onToggle} />
+      )}
 
       {/* Selection Overlay */}
       {selected && (

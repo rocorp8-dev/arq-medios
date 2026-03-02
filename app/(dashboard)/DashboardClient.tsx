@@ -1,6 +1,6 @@
 'use client'
 
-import { Lightbulb, FileText, CheckCircle2, Megaphone, Layers, Video } from 'lucide-react'
+import { Lightbulb, FileText, CheckCircle2, Megaphone, Layers, Video, Sparkles } from 'lucide-react'
 import DashboardChart from '@/components/DashboardChart'
 import Link from 'next/link'
 
@@ -18,6 +18,7 @@ interface Props {
   totalContent: number
   publishedContent: number
   activeCampaigns: number
+  totalSpent: number
   chartData: { dia: string; total: number }[]
   recentContent: ContentItem[]
 }
@@ -36,14 +37,14 @@ const statusLabel: Record<string, string> = {
 }
 
 export default function DashboardClient({
-  totalTopics, pendingTopics, totalContent, publishedContent, activeCampaigns, chartData, recentContent
+  totalTopics, pendingTopics, totalContent, publishedContent, activeCampaigns, totalSpent, chartData, recentContent
 }: Props) {
   const publishRate = totalContent > 0 ? Math.round((publishedContent / totalContent) * 100) : 0
 
   const kpis = [
     { label: 'Topics Pendientes', value: pendingTopics, sub: `de ${totalTopics} total`, icon: Lightbulb, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-    { label: 'Content Total', value: totalContent, sub: 'piezas generadas', icon: FileText, color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20' },
-    { label: 'Publicados', value: publishedContent, sub: `${publishRate}% tasa`, icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+    { label: 'Content Total', value: totalContent, sub: 'piezas en total', icon: FileText, color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20' },
+    { label: 'AI Credits', value: `$${totalSpent.toFixed(2)}`, sub: 'invertido en modelos', icon: Sparkles, color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
     { label: 'Campañas Activas', value: activeCampaigns, sub: 'en ejecución', icon: Megaphone, color: 'text-fuchsia-400', bg: 'bg-fuchsia-500/10 border-fuchsia-500/20' },
   ]
 

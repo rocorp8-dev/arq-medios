@@ -28,6 +28,12 @@ export default async function DashboardPage() {
   const publishedContent = content?.filter(c => c.status === 'published').length ?? 0
   const activeCampaigns = campaigns?.filter(c => c.status === 'active').length ?? 0
 
+  const { data: aiLogs } = await supabase
+    .from('ai_usage_logs')
+    .select('cost')
+    .eq('user_id', user.id)
+  const totalSpent = aiLogs?.reduce((sum, log) => sum + (log.cost ?? 0), 0) ?? 0
+
   // Chart: content created per day, last 7 days
   const now = new Date()
   const chartData = Array.from({ length: 7 }, (_, i) => {
@@ -48,6 +54,7 @@ export default async function DashboardPage() {
       totalContent={totalContent}
       publishedContent={publishedContent}
       activeCampaigns={activeCampaigns}
+      totalSpent={totalSpent}
       chartData={chartData}
       recentContent={recentContent}
     />
