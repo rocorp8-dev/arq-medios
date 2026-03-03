@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Webhook, Lightbulb, FileText, BarChart3, Menu, X, Rocket, Sparkles, Megaphone } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
 import clsx from 'clsx'
 
 const navItems = [
@@ -43,20 +42,12 @@ export default function Sidebar() {
               href={item.href}
               onClick={() => setOpen(false)}
               className={clsx(
-                "relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all group overflow-hidden",
+                "relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
                 isActive
-                  ? "text-indigo-300"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "text-indigo-300 bg-indigo-500/10 border border-indigo-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent"
               )}
             >
-              {isActive && (
-                <motion.div
-                  layoutId="activeNavIndicator"
-                  className="absolute inset-0 bg-indigo-500/10 border border-indigo-500/20 rounded-xl"
-                  initial={false}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                />
-              )}
               <Icon size={18} className={clsx("relative z-10 transition-colors", isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-400")} />
               <span className="relative z-10">{item.label}</span>
             </Link>
@@ -82,17 +73,14 @@ export default function Sidebar() {
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-            onClick={() => setOpen(false)}
-          />
+      {/* Mobile overlay */}
+      <div
+        className={clsx(
+          "md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300",
+          open ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
-      </AnimatePresence>
+        onClick={() => setOpen(false)}
+      />
 
       {/* Mobile sidebar */}
       <div

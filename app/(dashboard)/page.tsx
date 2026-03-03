@@ -6,33 +6,25 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data: topics } = await supabase
-    .from('topics')
-    .select('id, status')
-    .eq('user_id', user.id)
-
-  const { data: content } = await supabase
-    .from('content')
-    .select('id, type, status, title, created_at')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-
-  const { data: campaigns } = await supabase
-    .from('campaigns')
-    .select('id, status')
-    .eq('user_id', user.id)
+  const [
+    { data: topics },
+    { data: content },
+    { data: campaigns },
+    { data: costs }
+  ] = await Promise.all([
+    supabase.from('topics').select('id, status').eq('user_id', user.id),
+    supabase.from('content').select('id, type, status, title, created_at').eq('user_id', user.id).order('created_at', { ascending: false }),
+    supabase.from('campaigns').select('id, status').eq('user_id', user.id),
+    supabase.from('ai_costs').select('total_cost_usd').eq('user_id', user.id)
+  ])
 
   const totalTopics = topics?.length ?? 0
   const pendingTopics = topics?.filter(t => t.status === 'draft' || t.status === 'ready').length ?? 0
   const totalContent = content?.length ?? 0
   const publishedContent = content?.filter(c => c.status === 'published').length ?? 0
   const activeCampaigns = campaigns?.filter(c => c.status === 'active').length ?? 0
+  const totalSpent = costs?.reduce((acc, c) => acc + Number(c.total_cost_usd), 0) ?? 0
 
-  const { data: aiLogs } = await supabase
-    .from('ai_usage_logs')
-    .select('cost')
-    .eq('user_id', user.id)
-  const totalSpent = aiLogs?.reduce((sum, log) => sum + (log.cost ?? 0), 0) ?? 0
 
   // Chart: content created per day, last 7 days
   const now = new Date()

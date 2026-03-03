@@ -38,9 +38,9 @@ const statusOptions = [
   { value: 'approved', label: 'Aprobado' }, { value: 'published', label: 'Publicado' },
 ]
 
-interface Props { content: Content; webhookUrl: string | null }
+interface Props { content: Content; webhookUrl: string | null; userId: string }
 
-export default function ContentEditor({ content: initial, webhookUrl }: Props) {
+export default function ContentEditor({ content: initial, webhookUrl, userId }: Props) {
   const [content, setContent] = useState(initial)
   const [body, setBody] = useState<CarouselSlide[] | ReelSection[]>(
     Array.isArray(initial.body) ? initial.body : []
@@ -58,12 +58,7 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
   const [videoGenerating, setVideoGenerating] = useState(false)
   const [videoPrompt, setVideoPrompt] = useState('')
   const [combinePrompt, setCombinePrompt] = useState('')
-  const [user, setUser] = useState<any>(null)
   const supabase = createClient()
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user))
-  }, [])
 
   useEffect(() => {
     if (tab === 'media') fetchMedia()
@@ -118,14 +113,10 @@ export default function ContentEditor({ content: initial, webhookUrl }: Props) {
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!user) {
-      alert('Debes estar autenticado para subir imágenes.')
-      return
-    }
     setUploading(true)
     const fileExt = file.name.split('.').pop()
     const fileName = `${Math.random()}.${fileExt}`
-    const filePath = `${user.id}/${fileName}`
+    const filePath = `${userId}/${fileName}`
 
     try {
       const { data, error } = await supabase.storage.from('media').upload(filePath, file)
@@ -685,12 +676,13 @@ function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDele
 }) {
   return (
     <div
-      className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all duration-300 ${selected ? 'border-indigo-500 scale-95 ring-4 ring-indigo-500/20' : 'border-transparent hover:border-slate-700 hover:scale-[1.02]'}`}
+      onClick={onToggle}
+      className={`bg-slate-900/40 group relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all duration-300 ${selected ? 'border-indigo-500 scale-95 ring-4 ring-indigo-500/20' : 'border-transparent hover:border-slate-700 hover:scale-[1.02]'}`}
     >
       {type === 'video' ? (
-        <video src={url} className="w-full h-full object-cover" muted loop onMouseOver={e => e.currentTarget.play()} onMouseOut={e => e.currentTarget.pause()} onClick={onToggle} />
+        <video src={url} className="w-full h-full object-cover" muted loop onMouseOver={e => e.currentTarget.play()} onMouseOut={e => e.currentTarget.pause()} />
       ) : (
-        <NextImage src={url} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw" onClick={onToggle} />
+        <NextImage src={url} alt="" fill className={type === 'upload' ? 'object-contain p-2' : 'object-cover'} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw" />
       )}
 
       {/* Selection Overlay */}
@@ -723,8 +715,9 @@ function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDele
       </div>
 
       {!selected && (
-        <div className="absolute top-2 left-2 h-5 w-5 rounded-md border border-white/20 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onToggle} />
+        <div className="absolute top-2 left-2 h-5 w-5 rounded-md border border-white/20 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
       )}
     </div>
   )
 }
+

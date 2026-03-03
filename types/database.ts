@@ -79,8 +79,19 @@ export interface Media {
   user_id: string
   url: string
   name: string
-  type: 'upload' | 'combined' | 'generated'
+  type: 'upload' | 'combined' | 'generated' | 'video'
   prompt: string | null
   favorite: boolean
+  created_at: string
+}
+
+export interface AICost {
+  id: string
+  user_id: string
+  model_used: string
+  type: 'text' | 'image' | 'video'
+  duration_seconds: number | null
+  total_cost_usd: number
+  metadata: Record<string, unknown> | null
   created_at: string
 }

@@ -6,15 +6,7 @@ export default async function Header() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  let fullName = 'Usuario'
-  if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user.id)
-      .single()
-    fullName = profile?.full_name || user.email || 'Creador Viral'
-  }
+  const fullName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuario'
 
   return (
     <header className="sticky top-0 bg-[#0A0A0A]/80 backdrop-blur-md border-b border-[#222] px-6 py-4 z-30 flex items-center justify-between shadow-xl">

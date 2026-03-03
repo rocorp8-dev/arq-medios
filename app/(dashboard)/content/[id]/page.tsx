@@ -8,20 +8,15 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data: content } = await supabase
-    .from('content')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+  const [
+    { data: content },
+    { data: webhookConfig }
+  ] = await Promise.all([
+    supabase.from('content').select('*').eq('id', id).eq('user_id', user.id).single(),
+    supabase.from('webhook_config').select('make_webhook_url').eq('user_id', user.id).single()
+  ])
 
   if (!content) notFound()
 
-  const { data: webhookConfig } = await supabase
-    .from('webhook_config')
-    .select('make_webhook_url')
-    .eq('user_id', user.id)
-    .single()
-
-  return <ContentEditor content={content} webhookUrl={webhookConfig?.make_webhook_url ?? null} />
+  return <ContentEditor content={content} webhookUrl={webhookConfig?.make_webhook_url ?? null} userId={user.id} />
 }

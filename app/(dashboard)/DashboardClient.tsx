@@ -1,8 +1,13 @@
 'use client'
 
 import { Lightbulb, FileText, CheckCircle2, Megaphone, Layers, Video, Sparkles } from 'lucide-react'
-import DashboardChart from '@/components/DashboardChart'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
+
+const DashboardChart = dynamic(() => import('@/components/DashboardChart'), {
+  ssr: false,
+  loading: () => <div className="h-48 bg-[#0a0a0a] rounded-lg animate-pulse" />,
+})
 
 interface ContentItem {
   id: string
