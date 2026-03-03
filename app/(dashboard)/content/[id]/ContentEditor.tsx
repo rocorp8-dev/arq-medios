@@ -38,9 +38,16 @@ const statusOptions = [
   { value: 'approved', label: 'Aprobado' }, { value: 'published', label: 'Publicado' },
 ]
 
-interface Props { content: Content; webhookUrl: string | null; userId: string }
+interface Scenario {
+  id: string
+  name: string
+  webhook_url: string
+  channels: string[]
+}
 
-export default function ContentEditor({ content: initial, webhookUrl, userId }: Props) {
+interface Props { content: Content; initialScenarios: Scenario[]; userId: string }
+
+export default function ContentEditor({ content: initial, initialScenarios, userId }: Props) {
   const [content, setContent] = useState(initial)
   const [body, setBody] = useState<CarouselSlide[] | ReelSection[]>(
     Array.isArray(initial.body) ? initial.body : []
@@ -53,6 +60,7 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
   const [mediaTab, setMediaTab] = useState<'generated' | 'uploads' | 'combined' | 'videos' | 'favorites'>('generated')
   const [selectedUrls, setSelectedUrls] = useState<string[]>([])
   const [mediaList, setMediaList] = useState<any[]>([])
+  const [mediaLoaded, setMediaLoaded] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [combining, setCombining] = useState(false)
   const [videoGenerating, setVideoGenerating] = useState(false)
@@ -61,20 +69,23 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [useInSlideUrl, setUseInSlideUrl] = useState<string | null>(null)
   const [showSlideSelector, setShowSlideSelector] = useState(false)
+
+  // Automation Factories State
+  const [scenarios] = useState<Scenario[]>(initialScenarios)
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(initialScenarios[0]?.id || '')
+
   const supabase = createClient()
-  const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user))
-  }, [])
-
-  useEffect(() => {
-    if (tab === 'media') fetchMedia()
+    if (tab === 'media' && !mediaLoaded) fetchMedia()
   }, [tab])
 
   async function fetchMedia() {
     const res = await fetch('/api/media')
-    if (res.ok) setMediaList(await res.json())
+    if (res.ok) {
+      setMediaList(await res.json())
+      setMediaLoaded(true)
+    }
   }
 
   async function handleSave() {
@@ -87,18 +98,31 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
   }
 
   async function handleSendWebhook() {
+    const selectedScenario = scenarios.find(s => s.id === selectedScenarioId)
+
+    if (!selectedScenario?.webhook_url) {
+      alert('Por favor, selecciona o configura una Fábrica de Contenido primero.')
+      return
+    }
+
     setSending(true)
     try {
       const res = await fetch('/api/webhook', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contentId: content.id }),
+        body: JSON.stringify({
+          contentId: content.id,
+          webhookUrl: selectedScenario.webhook_url // Enviamos la URL específica de la fábrica
+        }),
       })
       const data = await res.json()
       if (data.success) { setSent(true); setTimeout(() => setSent(false), 3000) }
-      else alert('Error: ' + (data.error ?? 'Unknown'))
+      else {
+        alert('Error: ' + (data.error ?? 'Unknown'))
+      }
     } catch { alert('Error de conexión') }
     setSending(false)
   }
+
 
   function updateSlide(i: number, field: keyof CarouselSlide, value: string) {
     const slides = [...body] as CarouselSlide[]
@@ -123,7 +147,7 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
     if (!file) return
     setUploading(true)
     const fileExt = file.name.split('.').pop()
-    const uid = userId || user?.id
+    const uid = userId
     if (!uid) { alert('Error: No se pudo identificar al usuario. Recarga la página.'); setUploading(false); return }
     const fileName = `${Math.random()}.${fileExt}`
     const filePath = `${uid}/${fileName}`
@@ -316,22 +340,38 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
             {saved ? <CheckCircle size={16} /> : <Save size={16} />}
             {saving ? 'Guardando...' : saved ? 'Guardado' : 'Guardar'}
           </button>
-          {webhookUrl ? (
+          {scenarios.length > 0 ? (
             <div className="flex flex-col items-end gap-1.5">
-              <button onClick={handleSendWebhook} disabled={sending}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:shadow-lg hover:shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50">
-                {sent ? <CheckCircle size={18} /> : <Zap size={18} />}
-                {sending ? 'Publicando...' : sent ? '¡Publicado con éxito!' : '🚀 Publicar en Redes'}
-              </button>
-              <p className="text-[10px] text-slate-500 font-medium">
-                Vía Make.com • <span className="text-slate-400">Cuentas vinculadas en tu fábrica</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-[#1a1a1a] border border-white/5 rounded-xl px-3 py-1.5 gap-2 shadow-inner">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Fábrica:</span>
+                  <select
+                    value={selectedScenarioId}
+                    onChange={(e) => setSelectedScenarioId(e.target.value)}
+                    className="bg-transparent text-slate-200 text-xs font-bold outline-none cursor-pointer pr-1"
+                  >
+                    {scenarios.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={handleSendWebhook} disabled={sending}
+                  className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:shadow-lg hover:shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50">
+                  {sent ? <CheckCircle size={18} /> : <Zap size={18} />}
+                  {sending ? 'Despachando...' : sent ? '¡Enviado a Fábrica!' : '🚀 Enviar a Fábrica'}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 font-medium font-mono">
+                Destino: <span className="text-slate-400 font-bold capitalize">{scenarios.find(s => s.id === selectedScenarioId)?.channels.join(' + ') || 'Redes'}</span>
               </p>
             </div>
           ) : (
-            <Link href="/webhooks"
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-[#1a1a1a] border border-[#333] text-slate-400 rounded-lg hover:text-slate-200 hover:border-[#444] transition">
-              <Send size={16} />
-              Configurar Webhook
+            <Link
+              href="/automations"
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/20 active:scale-95"
+            >
+              <Zap size={18} />
+              Configurar Fábrica
             </Link>
           )}
         </div>
