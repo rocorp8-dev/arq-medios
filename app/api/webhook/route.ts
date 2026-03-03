@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const { contentId } = await request.json()
+  const { contentId, webhookUrl } = await request.json()
 
   // Get content
   const { data: content } = await supabase
@@ -18,15 +18,22 @@ export async function POST(request: Request) {
 
   if (!content) return NextResponse.json({ error: 'Content not found' }, { status: 404 })
 
-  // Get webhook config
-  const { data: config } = await supabase
-    .from('webhook_config')
-    .select('make_webhook_url')
-    .eq('user_id', user.id)
-    .single()
+  // Determine which webhook to use
+  let targetWebhookUrl = webhookUrl
 
-  if (!config?.make_webhook_url) {
-    return NextResponse.json({ error: 'Webhook URL no configurada' }, { status: 400 })
+  if (!targetWebhookUrl) {
+    // Fallback to legacy config
+    const { data: config } = await supabase
+      .from('webhook_config')
+      .select('make_webhook_url')
+      .eq('user_id', user.id)
+      .single()
+
+    targetWebhookUrl = config?.make_webhook_url
+  }
+
+  if (!targetWebhookUrl) {
+    return NextResponse.json({ error: 'No se encontró un destino (Fábrica) configurado' }, { status: 400 })
   }
 
   // Format payload for Make.com / n8n
@@ -58,7 +65,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const res = await fetch(config.make_webhook_url, {
+    const res = await fetch(targetWebhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -76,7 +83,7 @@ export async function POST(request: Request) {
     await supabase.from('webhook_logs').insert({
       user_id: user.id,
       content_id: contentId,
-      webhook_url: config.make_webhook_url,
+      webhook_url: targetWebhookUrl,
       status: webhookStatus,
       response_data: responseData,
     })
@@ -100,7 +107,7 @@ export async function POST(request: Request) {
     await supabase.from('webhook_logs').insert({
       user_id: user.id,
       content_id: contentId,
-      webhook_url: config.make_webhook_url,
+      webhook_url: targetWebhookUrl,
       status: 'failed',
       response_data: { error: 'Connection failed' },
     })
