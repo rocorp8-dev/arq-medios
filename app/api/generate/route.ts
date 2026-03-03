@@ -124,6 +124,18 @@ export async function POST(request: Request) {
     }).select().single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Track AI Costs
+    const groqCost = 0.0005
+    const imageCost = type === 'carousel' ? (body.length * 0.03) : 0
+    await supabase.from('ai_costs').insert({
+      user_id: user.id,
+      model_used: type === 'carousel' ? 'Groq Llama 3.3 70B + Nano Banana Pro' : 'Groq Llama 3.3 70B',
+      type: type === 'carousel' ? 'carousel_full' : 'reel_script',
+      total_cost_usd: groqCost + imageCost,
+      metadata: { topicId, images_count: type === 'carousel' ? body.length : 0 }
+    })
+
     return NextResponse.json(content)
   } catch (err) {
     console.error('Groq generation error:', err)

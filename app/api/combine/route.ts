@@ -79,6 +79,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ url: generatedUrl })
         }
 
+        // Track AI Costs
+        await supabase.from('ai_costs').insert({
+            user_id: user.id,
+            model_used: 'google/gemini-3-pro-image-preview (Nano Banana Pro)',
+            type: 'image_combination',
+            total_cost_usd: 0.05,
+            metadata: { images_count: imageUrls.length, instruction: instruction?.substring(0, 50) }
+        })
+
         return NextResponse.json(media)
     } catch (err) {
         console.error('Combine fetch error:', err)

@@ -53,6 +53,15 @@ export async function POST(request: Request) {
             favorite: false
         })
 
+        // Track AI Costs
+        await supabase.from('ai_costs').insert({
+            user_id: user.id,
+            model_used: 'google/gemini-3-pro-image-preview',
+            type: 'single_image',
+            total_cost_usd: 0.03,
+            metadata: { prompt: prompt.substring(0, 50) }
+        })
+
         return NextResponse.json({ url: imageUrl })
     } catch (err) {
         console.error('Image generation fetch error:', err)

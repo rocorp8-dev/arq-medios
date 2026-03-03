@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Topics', icon: Lightbulb, href: '/topics' },
   { label: 'Content', icon: FileText, href: '/content' },
   { label: 'Campaigns', icon: Megaphone, href: '/campaigns' },
+  { label: 'Automatización', icon: Sparkles, href: '/automations' },
   { label: 'Webhooks', icon: Webhook, href: '/webhooks' },
 ]
 

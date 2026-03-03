@@ -29,15 +29,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Webhook URL no configurada' }, { status: 400 })
   }
 
-  // Format payload for Make.com
+  // Format payload for Make.com / n8n
+  // We add AI Metadata for better tracking in the destination
+  const socialData = formatForSocial(content)
+
   const payload = {
-    type: content.type,
-    title: content.title,
-    platform: content.platform,
-    status: content.status,
-    body: content.body,
-    created_at: content.created_at,
-    formatted: formatForSocial(content),
+    meta: {
+      content_id: content.id,
+      type: content.type,
+      title: content.title,
+      platform: content.platform,
+      user_email: user.email,
+    },
+    // Pattern Banana: Observability data
+    ai_metadata: {
+      system: "Ro_Saas Factory - Banana 2",
+      model_mix: content.type === 'carousel' ? 'Groq Llama 3 + Nano Banana Pro' : 'Groq Llama 3',
+    },
+    // Ready to use for Automation
+    automation: {
+      caption: socialData.caption,
+      main_content: socialData.main_content,
+      // We avoid sending internal 'body' because it can contain huge base64 strings
+      media_urls: content.type === 'carousel'
+        ? (content.body as any[]).map(s => s.image_url).filter(url => url && !url.startsWith('data:'))
+        : [],
+    }
   }
 
   try {
@@ -47,9 +64,13 @@ export async function POST(request: Request) {
       body: JSON.stringify(payload),
     })
 
-    const webhookStatus = res.ok ? 'delivered' : 'failed'
     let responseData = null
-    try { responseData = await res.json() } catch { responseData = { status: res.status } }
+    try {
+      const text = await res.text()
+      try { responseData = JSON.parse(text) } catch { responseData = { raw: text } }
+    } catch { responseData = { status: res.status } }
+
+    const webhookStatus = res.ok ? 'delivered' : 'failed'
 
     // Log the webhook
     await supabase.from('webhook_logs').insert({
@@ -60,11 +81,21 @@ export async function POST(request: Request) {
       response_data: responseData,
     })
 
-    if (webhookStatus === 'delivered') {
-      await supabase.from('content').update({ status: 'published', published_at: new Date().toISOString() }).eq('id', contentId)
+    if (!res.ok) {
+      // Provide detailed error instead of "Unknown"
+      return NextResponse.json({
+        success: false,
+        error: `Make.com respondió con error ${res.status}: ${JSON.stringify(responseData)}`,
+        status: webhookStatus
+      }, { status: res.status })
     }
 
-    return NextResponse.json({ success: res.ok, status: webhookStatus })
+    await supabase.from('content').update({
+      status: 'published',
+      published_at: new Date().toISOString()
+    }).eq('id', contentId)
+
+    return NextResponse.json({ success: true, status: webhookStatus })
   } catch (err) {
     await supabase.from('webhook_logs').insert({
       user_id: user.id,
@@ -80,15 +111,17 @@ export async function POST(request: Request) {
 function formatForSocial(content: { type: string; title: string; body: unknown }) {
   if (content.type === 'carousel') {
     const slides = content.body as Array<{ slide_number: number; title: string; body: string; design_notes: string }>
+    const caption = `${content.title}\n\n${slides.map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
+
     return {
-      caption: `${content.title}\n\n${slides.map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`,
-      slides: slides.map(s => ({ text: `${s.title}\n\n${s.body}`, design: s.design_notes })),
+      caption,
+      main_content: slides.map(s => `SLIDE ${s.slide_number}\n${s.title.toUpperCase()}\n\n${s.body}\n\n[Diseño: ${s.design_notes}]`).join('\n\n---\n\n'),
     }
   }
 
   const sections = content.body as Array<{ section: string; label: string; text: string }>
   return {
-    script: sections.map(s => `[${s.label}]\n${s.text}`).join('\n\n'),
+    main_content: sections.map(s => `[${s.label}]\n${s.text}`).join('\n\n'),
     caption: `${content.title}\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital`,
   }
 }

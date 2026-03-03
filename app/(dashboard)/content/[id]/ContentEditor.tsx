@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Save, Send, CheckCircle, Eye, Pencil, Layers, Video, Instagram, Facebook, Palette, Upload, Plus, History, RefreshCw, Star, Trash2, X, Image as ImageIcon } from 'lucide-react'
+import { ArrowLeft, Save, Send, CheckCircle, Eye, Pencil, Layers, Video, Instagram, Facebook, Palette, Upload, Plus, History, RefreshCw, Star, Trash2, X, Image as ImageIcon, ZoomIn, Download, Check, Zap } from 'lucide-react'
 import { useEffect, useCallback, useMemo, memo } from 'react'
 import Link from 'next/link'
 import NextImage from 'next/image'
@@ -58,7 +58,15 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
   const [videoGenerating, setVideoGenerating] = useState(false)
   const [videoPrompt, setVideoPrompt] = useState('')
   const [combinePrompt, setCombinePrompt] = useState('')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [useInSlideUrl, setUseInSlideUrl] = useState<string | null>(null)
+  const [showSlideSelector, setShowSlideSelector] = useState(false)
   const supabase = createClient()
+  const [user, setUser] = useState<any>(null)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user))
+  }, [])
 
   useEffect(() => {
     if (tab === 'media') fetchMedia()
@@ -115,8 +123,10 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
     if (!file) return
     setUploading(true)
     const fileExt = file.name.split('.').pop()
+    const uid = userId || user?.id
+    if (!uid) { alert('Error: No se pudo identificar al usuario. Recarga la página.'); setUploading(false); return }
     const fileName = `${Math.random()}.${fileExt}`
-    const filePath = `${userId}/${fileName}`
+    const filePath = `${uid}/${fileName}`
 
     try {
       const { data, error } = await supabase.storage.from('media').upload(filePath, file)
@@ -165,6 +175,36 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
     } finally {
       setCombining(false)
     }
+  }
+
+  async function handleDownload(url: string, fileName?: string) {
+    try {
+      const resp = await fetch(url)
+      const blob = await resp.blob()
+      const link = document.createElement('a')
+      link.href = window.URL.createObjectURL(blob)
+      link.download = fileName || 'imagen.png'
+      link.click()
+    } catch (e) {
+      alert('Error al descargar la imagen')
+    }
+  }
+
+  async function handleReplaceSlide(url: string, index: number) {
+    if (content.type !== 'carousel') return
+    const slides = [...body] as CarouselSlide[]
+    slides[index] = { ...slides[index], image_url: url }
+    setBody(slides)
+
+    // Auto-save
+    setSaving(true)
+    const { data } = await supabase.from('content').update({ body: slides }).eq('id', content.id).select().single()
+    if (data) setContent(data as Content)
+    setSaving(false)
+
+    setShowSlideSelector(false)
+    setUseInSlideUrl(null)
+    setTab('preview') // Switch to preview to see the change
   }
 
   async function handleGenerateVideo() {
@@ -277,11 +317,16 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
             {saving ? 'Guardando...' : saved ? 'Guardado' : 'Guardar'}
           </button>
           {webhookUrl ? (
-            <button onClick={handleSendWebhook} disabled={sending}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-50">
-              {sent ? <CheckCircle size={16} /> : <Send size={16} />}
-              {sending ? 'Enviando...' : sent ? 'Enviado a Make' : 'Enviar a Make.com'}
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button onClick={handleSendWebhook} disabled={sending}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:shadow-lg hover:shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50">
+                {sent ? <CheckCircle size={18} /> : <Zap size={18} />}
+                {sending ? 'Publicando...' : sent ? '¡Publicado con éxito!' : '🚀 Publicar en Redes'}
+              </button>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Vía Make.com • <span className="text-slate-400">Cuentas vinculadas en tu fábrica</span>
+              </p>
+            </div>
           ) : (
             <Link href="/webhooks"
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-[#1a1a1a] border border-[#333] text-slate-400 rounded-lg hover:text-slate-200 hover:border-[#444] transition">
@@ -656,8 +701,69 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
                 onToggle={() => toggleSelection(media.url)}
                 onFavorite={() => toggleFavorite(media.id, media.favorite)}
                 onDelete={() => handleDelete(media.id)}
+                onZoom={() => setLightboxUrl(media.url)}
+                onDownload={() => handleDownload(media.url, media.name)}
+                onUse={content.type === 'carousel' ? () => { setUseInSlideUrl(media.url); setShowSlideSelector(true); } : undefined}
               />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 lg:p-12 animate-in fade-in duration-300">
+          <button
+            onClick={() => setLightboxUrl(null)}
+            className="absolute top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all z-20"
+          >
+            <X size={24} />
+          </button>
+          <div className="relative w-full h-full flex items-center justify-center">
+            <NextImage
+              src={lightboxUrl}
+              alt="Detail"
+              fill
+              className="object-contain"
+              priority
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Slide Selector Modal */}
+      {showSlideSelector && (
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
+          <div className="bg-[#111] border border-[#2a2a2a] w-full max-w-md rounded-3xl p-8 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-3">
+              <Layers className="text-indigo-500" /> Usar en Carrusel
+            </h3>
+            <p className="text-sm text-slate-400 mb-8">Selecciona en qué slide deseas colocar esta imagen.</p>
+
+            <div className="grid grid-cols-2 gap-3 mb-8">
+              {Array.from({ length: 10 }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleReplaceSlide(useInSlideUrl!, i)}
+                  className="flex items-center gap-3 p-4 rounded-xl border border-[#2a2a2a] hover:border-indigo-500/50 hover:bg-indigo-500/10 transition group text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex items-center justify-center text-xs font-bold text-slate-400 group-hover:text-indigo-400 transition">
+                    {i + 1}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-200">{slideLabels[i + 1]}</p>
+                    <p className="text-[10px] text-slate-500">Slide {i + 1}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => { setShowSlideSelector(false); setUseInSlideUrl(null); }}
+              className="w-full py-4 text-sm font-bold text-slate-400 hover:text-white transition"
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}
@@ -665,14 +771,17 @@ export default function ContentEditor({ content: initial, webhookUrl, userId }: 
   )
 }
 
-function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDelete }: {
+function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDelete, onZoom, onDownload, onUse }: {
   url: string,
   selected: boolean,
   type?: 'upload' | 'combined' | 'generated' | 'video',
   favorite?: boolean,
   onToggle: () => void,
   onFavorite?: () => void,
-  onDelete?: () => void
+  onDelete?: () => void,
+  onZoom?: () => void,
+  onDownload?: () => void,
+  onUse?: () => void
 }) {
   return (
     <div
@@ -696,6 +805,31 @@ function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDele
 
       {/* Action Buttons */}
       <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onZoom && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onZoom(); }}
+            className="p-2 rounded-lg bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition shadow-lg"
+          >
+            <ZoomIn size={14} />
+          </button>
+        )}
+        {onUse && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onUse(); }}
+            className="p-2 rounded-lg bg-indigo-600/90 text-white backdrop-blur-md hover:bg-indigo-600 transition shadow-lg"
+            title="Usar en Carrusel"
+          >
+            <Layers size={14} />
+          </button>
+        )}
+        {onDownload && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDownload(); }}
+            className="p-2 rounded-lg bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition shadow-lg"
+          >
+            <Download size={14} />
+          </button>
+        )}
         {onFavorite && (
           <button
             onClick={(e) => { e.stopPropagation(); onFavorite(); }}
