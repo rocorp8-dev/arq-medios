@@ -172,59 +172,147 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
     }
 
     function handleExportBlueprint(scenario: Scenario) {
+        // Make.com-compatible module identifiers per channel
+        const makeModules: Record<string, { module: string; actionName: string }> = {
+            instagram: { module: 'instagram:CreateAPhoto', actionName: 'Create a Photo' },
+            facebook: { module: 'facebook:CreateAPagePost', actionName: 'Create a Page Post' },
+            linkedin: { module: 'linkedin:CreateAShareUpdate', actionName: 'Create a Share Update' }
+        }
+
+        // Build the Make.com-compatible flow array
+        let moduleId = 1
+        const flow: any[] = []
+
+        // Module 1: Custom Webhook trigger
+        flow.push({
+            id: moduleId++,
+            module: 'gateway:CustomWebHook',
+            version: 1,
+            parameters: {
+                hook: scenario.webhook_url || '<<INSERT_WEBHOOK_ID>>',
+                maxResults: 1
+            },
+            mapper: {},
+            metadata: {
+                designer: { x: 0, y: 0 },
+                restore: {},
+                expect: [
+                    {
+                        name: 'meta', type: 'collection', spec: [
+                            { name: 'content_id', type: 'text' },
+                            { name: 'type', type: 'text' },
+                            { name: 'title', type: 'text' },
+                            { name: 'platform', type: 'text' }
+                        ]
+                    },
+                    {
+                        name: 'automation', type: 'collection', spec: [
+                            { name: 'caption', type: 'text' },
+                            { name: 'main_content', type: 'text' },
+                            { name: 'media_urls', type: 'array', spec: { type: 'text' } }
+                        ]
+                    }
+                ]
+            }
+        })
+
+        // Module 2: Router (if multiple channels)
+        if (scenario.channels.length > 1) {
+            flow.push({
+                id: moduleId++,
+                module: 'builtin:BasicRouter',
+                version: 1,
+                parameters: {},
+                mapper: null,
+                metadata: {
+                    designer: { x: 300, y: 0 }
+                },
+                routes: scenario.channels.map((ch, i) => ({
+                    flow: [{
+                        id: moduleId++,
+                        module: makeModules[ch]?.module || `${ch}:CreatePost`,
+                        version: 1,
+                        parameters: { connection: `<<CONNECT_YOUR_${ch.toUpperCase()}_ACCOUNT>>` },
+                        mapper: {
+                            message: '{{1.automation.caption}}',
+                            url: '{{1.automation.media_urls[]}}',
+                            caption: '{{1.automation.caption}}'
+                        },
+                        metadata: {
+                            designer: { x: 600, y: i * 200 },
+                            expect: [
+                                { name: 'message', type: 'text', label: 'Caption / Texto' },
+                                { name: 'url', type: 'text', label: 'Image URL' }
+                            ]
+                        }
+                    }],
+                    label: `Ruta → ${channelModules[ch]?.name || ch}`
+                }))
+            })
+        } else {
+            // Single channel — no router needed
+            const ch = scenario.channels[0]
+            flow.push({
+                id: moduleId++,
+                module: makeModules[ch]?.module || `${ch}:CreatePost`,
+                version: 1,
+                parameters: { connection: `<<CONNECT_YOUR_${ch.toUpperCase()}_ACCOUNT>>` },
+                mapper: {
+                    message: '{{1.automation.caption}}',
+                    url: '{{1.automation.media_urls[]}}',
+                    caption: '{{1.automation.caption}}'
+                },
+                metadata: {
+                    designer: { x: 300, y: 0 },
+                    expect: [
+                        { name: 'message', type: 'text', label: 'Caption / Texto' },
+                        { name: 'url', type: 'text', label: 'Image URL' }
+                    ]
+                }
+            })
+        }
+
         const blueprint = {
             name: `Arq-Medios: ${scenario.name}`,
-            description: `Flujo de automatización para publicar contenido en ${scenario.channels.join(', ')}`,
-            trigger: {
-                type: scenario.trigger_type,
-                config: scenario.trigger_type === 'webhook'
-                    ? { url: scenario.webhook_url, method: 'POST', content_type: 'application/json' }
-                    : { schedule: scenario.schedule_info },
-            },
-            modules: [
-                {
-                    step: 1,
-                    name: 'Webhook - Recibir contenido de Arq-Medios',
-                    type: 'webhook',
-                    description: 'Recibe el payload con meta, ai_metadata y automation',
-                    output_fields: ['meta.content_id', 'meta.type', 'meta.title', 'meta.platform', 'automation.caption', 'automation.main_content', 'automation.media_urls']
-                },
-                {
-                    step: 2,
-                    name: 'Router - Distribuir por canal',
-                    type: 'router',
-                    description: `Enruta el contenido a ${scenario.channels.length} canal(es)`,
-                    routes: scenario.channels.map(ch => ({
-                        channel: ch,
-                        module: channelModules[ch]?.apiModule || ch,
-                        condition: `meta.platform contains "${ch}" OR meta.platform = "both"`
-                    }))
-                },
-                ...scenario.channels.map((ch, i) => ({
-                    step: 3 + i,
-                    name: `${channelModules[ch]?.name || ch} - Publicar`,
-                    type: ch,
-                    description: channelModules[ch]?.description || `Publica en ${ch}`,
-                    input_mapping: {
-                        caption: '{{automation.caption}}',
-                        image_urls: '{{automation.media_urls}}',
-                        text: '{{automation.main_content}}'
-                    }
-                }))
-            ],
-            payload_example: {
-                meta: { content_id: 'uuid', type: 'carousel', title: 'Mi Post Viral', platform: 'both', user_email: 'user@email.com' },
-                ai_metadata: { system: 'Ro_Saas Factory - Banana 2', model_mix: 'Groq Llama 3' },
-                automation: {
-                    caption: 'Tu caption para redes sociales...',
-                    main_content: 'Contenido principal del post...',
-                    media_urls: ['https://example.com/image1.jpg', 'https://example.com/image2.jpg']
-                }
-            },
+            flow,
             metadata: {
+                version: 1,
+                scenario: {
+                    roundtrips: 1,
+                    maxErrors: 3,
+                    autoCommit: true,
+                    autoCommitTriggerLast: true,
+                    sequential: false,
+                    confidential: false,
+                    dataloss: false,
+                    dlq: false
+                },
+                designer: { orphans: [] },
+                zone: 'us2.make.com'
+            },
+            // Arq-Medios reference (for the user, not Make.com)
+            _arq_medios: {
                 exported_at: new Date().toISOString(),
-                version: '3.0',
-                source: 'Arq-Medios by Ro_Saas Factory'
+                version: '4.0',
+                source: 'Arq-Medios by Ro_Saas Factory',
+                channels: scenario.channels,
+                payload_example: {
+                    meta: { content_id: 'uuid', type: 'carousel', title: 'Mi Post Viral', platform: 'both' },
+                    automation: {
+                        caption: 'Tu caption para redes sociales...',
+                        main_content: 'Contenido principal del post...',
+                        media_urls: ['https://example.com/image1.jpg']
+                    }
+                },
+                setup_instructions: [
+                    '1. En Make.com: Create a new scenario',
+                    '2. Click "..." → Import Blueprint → sube este archivo',
+                    '3. En el módulo Webhook: Click "Add" para generar tu URL',
+                    '4. Copia la URL y pégala en Arq-Medios (campo Webhook URL)',
+                    `5. Conecta tu cuenta de ${scenario.channels.map(c => channelModules[c]?.name || c).join(' y ')}`,
+                    '6. Activa el escenario (botón ON)',
+                    '7. Envía contenido desde Arq-Medios con "Enviar a Fábrica"'
+                ]
             }
         }
 
@@ -287,8 +375,8 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                         <div className={clsx(
                                             "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
                                             scenario.is_active && hasWebhook ? "bg-emerald-500/10 text-emerald-400" :
-                                            !hasWebhook ? "bg-amber-500/10 text-amber-500" :
-                                            "bg-slate-500/10 text-slate-400"
+                                                !hasWebhook ? "bg-amber-500/10 text-amber-500" :
+                                                    "bg-slate-500/10 text-slate-400"
                                         )}>
                                             <Zap size={24} />
                                         </div>
@@ -389,9 +477,9 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                         </div>
                                         <p className="text-sm text-slate-300 font-medium">
                                             {scenario.trigger_type === 'schedule' ? `Programado: ${scenario.schedule_info}` :
-                                             scenario.trigger_type === 'webhook' ? 'Webhook (desde Arq-Medios)' :
-                                             scenario.trigger_type === 'sheets' ? 'Google Sheets (nueva fila)' :
-                                             'RSS Feed (nuevo artículo)'}
+                                                scenario.trigger_type === 'webhook' ? 'Webhook (desde Arq-Medios)' :
+                                                    scenario.trigger_type === 'sheets' ? 'Google Sheets (nueva fila)' :
+                                                        'RSS Feed (nuevo artículo)'}
                                         </p>
                                     </div>
                                     <div className="bg-[#0a0a0a]/50 p-4 rounded-xl border border-[#222] hover:border-fuchsia-500/30 transition-colors">
@@ -656,18 +744,36 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                         </div>
 
                         <div className="p-8 space-y-8">
-                            {/* Step 1 */}
-                            <div className="flex gap-4">
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold">1</div>
+                            {/* Step 1: Blueprint Option */}
+                            <div className="flex gap-4 p-6 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl">
+                                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white shadow-lg">
+                                    <Download size={20} />
+                                </div>
                                 <div className="flex-1">
-                                    <h3 className="text-base font-bold text-slate-100 mb-2">Crear Escenario en Make.com</h3>
-                                    <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 space-y-2 text-sm text-slate-400">
-                                        <p>1. Ve a <strong className="text-slate-200">make.com</strong> e inicia sesión</p>
-                                        <p>2. Click en <strong className="text-slate-200">&quot;Create a new scenario&quot;</strong></p>
-                                        <p>3. Busca el módulo <strong className="text-slate-200">&quot;Webhooks&quot;</strong></p>
-                                        <p>4. Selecciona <strong className="text-slate-200">&quot;Custom webhook&quot;</strong> como trigger</p>
-                                        <p>5. Click en <strong className="text-slate-200">&quot;Add&quot;</strong> → dale un nombre → <strong className="text-slate-200">&quot;Save&quot;</strong></p>
-                                        <p>6. <strong className="text-indigo-400">Copia la URL</strong> que te aparece</p>
+                                    <h3 className="text-lg font-bold text-indigo-400 mb-1">Método Rápido: Importar Blueprint</h3>
+                                    <p className="text-sm text-slate-400 leading-relaxed mb-4">
+                                        Hemos generado un archivo con toda la lógica (webhook + router + módulos) lista para usar.
+                                    </p>
+                                    <button
+                                        onClick={() => { handleExportBlueprint(guideScenario); }}
+                                        className="inline-flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20"
+                                    >
+                                        <Download size={16} />
+                                        Descargar y Usar en Make.com
+                                    </button>
+                                    <div className="mt-4 text-[11px] text-slate-500 italic">
+                                        * En Make.com: Crea escenario → Click &quot;...&quot; (abajo) → Import Blueprint → Sube este archivo.
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Step 2 */}
+                            <div className="flex gap-4">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 text-sm font-bold border border-[#333]">2</div>
+                                <div className="flex-1">
+                                    <h3 className="text-base font-bold text-slate-100 mb-2">Vincular Webhook</h3>
+                                    <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 text-sm text-slate-400">
+                                        <p>Una vez importado, abre el primer módulo (Webhook), crea un nuevo hook para obtener tu URL única y pégala arriba en esta tarjeta de Arq-Medios.</p>
                                     </div>
                                 </div>
                             </div>

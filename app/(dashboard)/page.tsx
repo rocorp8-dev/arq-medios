@@ -13,7 +13,7 @@ export default async function DashboardPage() {
     { data: costs }
   ] = await Promise.all([
     supabase.from('topics').select('id, status').eq('user_id', user.id),
-    supabase.from('content').select('id, type, status, title, created_at').eq('user_id', user.id).order('created_at', { ascending: false }),
+    supabase.from('content').select('id, type, status, title, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
     supabase.from('campaigns').select('id, status').eq('user_id', user.id),
     supabase.from('ai_costs').select('total_cost_usd').eq('user_id', user.id)
   ])

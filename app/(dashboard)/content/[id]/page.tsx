@@ -10,13 +10,13 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
 
   const [
     { data: content },
-    { data: webhookConfig }
+    { data: scenarios }
   ] = await Promise.all([
     supabase.from('content').select('*').eq('id', id).eq('user_id', user.id).single(),
-    supabase.from('webhook_config').select('make_webhook_url').eq('user_id', user.id).single()
+    supabase.from('scenarios').select('*').eq('user_id', user.id).eq('is_active', true)
   ])
 
   if (!content) notFound()
 
-  return <ContentEditor content={content} webhookUrl={webhookConfig?.make_webhook_url ?? null} userId={user.id} />
+  return <ContentEditor content={content} initialScenarios={scenarios ?? []} userId={user.id} />
 }

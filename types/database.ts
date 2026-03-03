@@ -45,6 +45,16 @@ export interface Content {
   created_at: string
 }
 
+// Lightweight type for list views — does not include heavy 'body' field
+export interface ContentListItem {
+  id: string
+  title: string
+  type: 'carousel' | 'reel'
+  status: 'draft' | 'review' | 'approved' | 'published'
+  platform: 'instagram' | 'facebook' | 'both'
+  created_at: string
+}
+
 export interface Campaign {
   id: string
   user_id: string

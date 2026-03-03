@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale'
 import { Search, Trash2, Eye } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import type { Content } from '@/types/database'
+import type { ContentListItem } from '@/types/database'
 
 const statusBadge: Record<string, string> = {
   draft: 'bg-slate-700 text-slate-300',
@@ -25,10 +25,10 @@ const typeBadge: Record<string, string> = {
   reel: 'bg-pink-900/50 text-pink-400',
 }
 
-interface Props { initialContent: Content[]; userId: string }
+interface Props { initialContent: ContentListItem[]; userId: string }
 
 export default function ContentClient({ initialContent, userId }: Props) {
-  const [content, setContent] = useState<Content[]>(initialContent)
+  const [content, setContent] = useState<ContentListItem[]>(initialContent)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
