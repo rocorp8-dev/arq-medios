@@ -103,15 +103,18 @@ export async function POST(request: Request) {
     }).eq('id', contentId)
 
     return NextResponse.json({ success: true, status: webhookStatus })
-  } catch (err) {
+  } catch (err: any) {
+    console.error('Webhook fetch error:', err)
     await supabase.from('webhook_logs').insert({
       user_id: user.id,
       content_id: contentId,
       webhook_url: targetWebhookUrl,
       status: 'failed',
-      response_data: { error: 'Connection failed' },
+      response_data: { error: err.message || 'Connection failed' },
     })
-    return NextResponse.json({ error: 'Failed to send webhook' }, { status: 500 })
+    return NextResponse.json({
+      error: `Error de conexión: ${err.message || 'No se pudo contactar con el destino'}. Verifica la URL del Webhook.`
+    }, { status: 500 })
   }
 }
 
