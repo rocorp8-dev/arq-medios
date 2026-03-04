@@ -460,7 +460,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                     const channelMapper: Record<string, any> = ch === 'instagram' ? {
                         accountId: igAccountId,
                         caption: `{{${webhookId}.caption}}`,
-                        image_url: `{{${webhookId}.images[1].image_url}}`
+                        image_url: `{{first(map(${webhookId}.images; "image_url"))}}`
                     } : {
                         content: `{{${webhookId}.caption}}`,
                         url: `{{${webhookId}.url}}`
