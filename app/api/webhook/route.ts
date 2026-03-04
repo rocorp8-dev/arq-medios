@@ -57,9 +57,31 @@ export async function POST(request: Request) {
   // Format payload for Make.com according to Spec "Web to Social Media via AI"
   const socialData = formatForSocial(content)
 
-  // Build images array
+  // Build images array — auto-upload any data: URLs to Supabase storage
+  let slidesBody = content.body as any[]
+  let bodyUpdated = false
+
+  if (content.type === 'carousel') {
+    slidesBody = await Promise.all(
+      slidesBody.map(async (slide: any, i: number) => {
+        if (slide.image_url?.startsWith('data:')) {
+          const publicUrl = await uploadDataUrl(supabase, slide.image_url, content.id, i)
+          if (publicUrl) {
+            bodyUpdated = true
+            return { ...slide, image_url: publicUrl }
+          }
+        }
+        return slide
+      })
+    )
+    // Persist the upgraded URLs so next publish doesn't re-upload
+    if (bodyUpdated) {
+      await supabase.from('content').update({ body: slidesBody }).eq('id', content.id)
+    }
+  }
+
   const imagesArray = content.type === 'carousel'
-    ? (content.body as any[])
+    ? slidesBody
       .map((s: any) => ({ image_url: s.image_url }))
       .filter((img: any) => img.image_url && !img.image_url.startsWith('data:'))
     : (socialData.image_url ? [{ image_url: socialData.image_url }] : [])
@@ -142,6 +164,25 @@ export async function POST(request: Request) {
     return NextResponse.json({
       error: `Error de conexión: ${err.message || 'No se pudo contactar con el destino'}. Verifica la URL del Webhook.`
     }, { status: 500 })
+  }
+}
+
+/** Uploads a data: base64 URL to Supabase storage and returns the public URL */
+async function uploadDataUrl(supabase: any, dataUrl: string, contentId: string, slideIndex: number): Promise<string | null> {
+  try {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match) return null
+    const mimeType = match[1]
+    const base64 = match[2]
+    const ext = mimeType.split('/')[1]?.split('+')[0] || 'png'
+    const path = `content/${contentId}/slide-${slideIndex}-${Date.now()}.${ext}`
+    const buffer = Buffer.from(base64, 'base64')
+    const { error } = await supabase.storage.from('media').upload(path, buffer, { contentType: mimeType, upsert: true })
+    if (error) return null
+    const { data: { publicUrl } } = supabase.storage.from('media').getPublicUrl(path)
+    return publicUrl
+  } catch {
+    return null
   }
 }
 
