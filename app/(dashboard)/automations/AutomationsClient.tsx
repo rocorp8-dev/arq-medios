@@ -202,11 +202,11 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
         // Make.com-compatible module identifiers and metadata per channel based on professional examples
         const makeModules: Record<string, any> = {
             instagram: {
-                module: 'instagram-business:createPost',
+                module: 'instagram-business:CreatePostPhoto',
                 version: 1,
                 color: '#E1306C',
                 expect: [
-                    { name: 'instagram_business_account_id', type: 'text', label: 'Instagram Business Account ID', required: true },
+                    { name: 'accountId', type: 'select', label: 'Page', required: true },
                     { name: 'image_url', type: 'url', label: 'Photo URL', required: true },
                     { name: 'caption', type: 'text', label: 'Caption' }
                 ]
@@ -411,6 +411,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             metadata: { color: '#1877F2' }
                         })
 
+                        const fbPageId = scenario.facebook_page_id || `{{${webhookId}.page_id}}`
                         return {
                             flow: [
                                 {
@@ -420,24 +421,29 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                     parameters: { handleErrors: true },
                                     mapper: {
                                         url: `{{first(map(${webhookId}.images; "image_url"))}}`,
-                                        method: 'get'
+                                        method: 'get',
+                                        serializeUrl: false,
+                                        shareCookies: false
                                     },
                                     metadata: { designer: { x: routerStartX + 300, y: i * 200, name: 'Descargar Imagen' } }
                                 },
                                 {
                                     id: pubId,
-                                    module: 'facebook-pages:uploadPhoto',
-                                    version: 1,
+                                    module: 'facebook-pages:UploadPhoto',
+                                    version: 6,
                                     parameters: {},
                                     mapper: {
-                                        caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
-                                        photo: `{{${httpFbId}.data}}`,
-                                        page_id: `{{${webhookId}.page_id}}`,
-                                        published: true
+                                        data: `{{${httpFbId}.data}}`,
+                                        message: `{{${webhookId}.caption}}`,
+                                        page_id: fbPageId,
+                                        fileName: `{{${httpFbId}.fileName}}`
                                     },
                                     metadata: {
                                         designer: { x: routerStartX + 600, y: i * 200, name: 'Facebook Pura Foto' },
-                                        restore: { parameters: { __IMTCONN__: { label: 'Conexión Facebook Pages' } } }
+                                        restore: {
+                                            parameters: { __IMTCONN__: { label: 'Conexión Facebook Pages — selecciona tu cuenta' } },
+                                            expect: { page_id: { mode: 'chose', label: scenario.facebook_page_id || 'Selecciona tu página' } }
+                                        }
                                     }
                                 }
                             ],
@@ -449,14 +455,22 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                         }
                     }
 
-                    // Instagram — single module, image URL comes directly from payload
+                    // Instagram — single module, image URL from first carousel image
+                    const igAccountId = scenario.instagram_business_id || `{{${webhookId}.instagram_id}}`
                     const channelMapper: Record<string, any> = ch === 'instagram' ? {
-                        instagram_business_account_id: `{{${webhookId}.instagram_id}}`,
-                        caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
-                        image_url: `{{${webhookId}.image_url}}`
+                        accountId: igAccountId,
+                        caption: `{{${webhookId}.caption}}`,
+                        image_url: `{{${webhookId}.images[1].image_url}}`
                     } : {
                         content: `{{${webhookId}.caption}}`,
                         url: `{{${webhookId}.url}}`
+                    }
+
+                    const igRestore = ch === 'instagram' ? {
+                        parameters: { __IMTCONN__: { label: 'Conexión Instagram Business — selecciona tu cuenta' } },
+                        expect: { accountId: { mode: 'chose', label: scenario.instagram_business_id || 'Selecciona tu cuenta Instagram' } }
+                    } : {
+                        parameters: { __IMTCONN__: { label: `Conexión ${ch}` } }
                     }
 
                     // Add filter on Instagram route to avoid errors when image_url is missing
@@ -476,11 +490,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             mapper: channelMapper,
                             metadata: {
                                 designer: { x: routerStartX + 300, y: i * 200, name: `Publicar en ${ch}` },
-                                restore: {
-                                    parameters: {
-                                        __IMTCONN__: { label: `Conexión Arq-Medios ${ch}` }
-                                    }
-                                },
+                                restore: igRestore,
                                 expect: modCfg.expect
                             }
                         }],
@@ -589,6 +599,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                         metadata: { color: '#1877F2' }
                     })
 
+                    const fbPageIdSingle = scenario.facebook_page_id || `{{${webhookId}.page_id}}`
                     flow.push(
                         {
                             id: httpFbId,
@@ -597,33 +608,39 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             parameters: { handleErrors: true },
                             mapper: {
                                 url: `{{first(map(${webhookId}.images; "image_url"))}}`,
-                                method: 'get'
+                                method: 'get',
+                                serializeUrl: false,
+                                shareCookies: false
                             },
                             metadata: { designer: { x: routerStartX + 300, y: 0, name: 'Descargar Imagen' } }
                         },
                         {
                             id: pubId,
-                            module: 'facebook-pages:uploadPhoto',
-                            version: 1,
+                            module: 'facebook-pages:UploadPhoto',
+                            version: 6,
                             parameters: {},
                             mapper: {
-                                caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
-                                photo: `{{${httpFbId}.data}}`,
-                                page_id: `{{${webhookId}.page_id}}`,
-                                published: true
+                                data: `{{${httpFbId}.data}}`,
+                                message: `{{${webhookId}.caption}}`,
+                                page_id: fbPageIdSingle,
+                                fileName: `{{${httpFbId}.fileName}}`
                             },
                             metadata: {
                                 designer: { x: routerStartX + 600, y: 0, name: 'Facebook Pura Foto' },
-                                restore: { parameters: { __IMTCONN__: { label: 'Conexión Facebook Pages' } } }
+                                restore: {
+                                    parameters: { __IMTCONN__: { label: 'Conexión Facebook Pages — selecciona tu cuenta' } },
+                                    expect: { page_id: { mode: 'chose', label: scenario.facebook_page_id || 'Selecciona tu página' } }
+                                }
                             }
                         }
                     )
                 } else {
                 // Instagram / others: single module
+                const igAccountIdSingle = scenario.instagram_business_id || `{{${webhookId}.instagram_id}}`
                 const channelMapper: Record<string, any> = ch === 'instagram' ? {
-                    instagram_business_account_id: `{{${webhookId}.instagram_id}}`,
-                    caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
-                    image_url: `{{${webhookId}.image_url}}`
+                    accountId: igAccountIdSingle,
+                    caption: `{{${webhookId}.caption}}`,
+                    image_url: `{{${webhookId}.images[1].image_url}}`
                 } : {
                     content: `{{${webhookId}.caption}}`,
                     url: `{{${webhookId}.url}}`
@@ -638,9 +655,8 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                     metadata: {
                         designer: { x: routerStartX + 300, y: 0, name: `Publicar en ${ch}` },
                         restore: {
-                            parameters: {
-                                __IMTCONN__: { label: `Conexión Arq-Medios ${ch}` }
-                            }
+                            parameters: { __IMTCONN__: { label: ch === 'instagram' ? 'Conexión Instagram Business — selecciona tu cuenta' : `Conexión ${ch}` } },
+                            ...(ch === 'instagram' ? { expect: { accountId: { mode: 'chose', label: scenario.instagram_business_id || 'Selecciona tu cuenta Instagram' } } } : {})
                         },
                         expect: modCfg.expect
                     }
