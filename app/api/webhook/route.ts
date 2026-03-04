@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const { contentId, scenarioId, webhookUrl } = await request.json()
+  const { contentId, scenarioId, webhookUrl, customCaption } = await request.json()
 
   // Get content
   const { data: content } = await supabase
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
     // Post Content
     title: content.title,
-    caption: stripUrls(socialData.caption), // URLs stripped server-side → prevents Facebook link preview card
+    caption: stripUrls(customCaption || socialData.caption), // User-edited caption takes priority; URLs always stripped
     image_url: firstImageUrl,   // Primera imagen directa → para HTTP download / Instagram / Facebook Photo URL
     link_url: `https://arq-medios.com/content/${content.id}`, // Referencia de la página — separado de la imagen
     url: `https://arq-medios.com/content/${content.id}`, // Alias legacy de link_url

@@ -74,6 +74,16 @@ export default function ContentEditor({ content: initial, initialScenarios, user
   const [scenarios] = useState<Scenario[]>(initialScenarios)
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>(initialScenarios[0]?.id || '')
 
+  // Editable caption — pre-filled with auto-generated text, user can customize before sending
+  const defaultCaption = useMemo(() => {
+    if (initial.type === 'carousel') {
+      const slides = (Array.isArray(initial.body) ? initial.body : []) as CarouselSlide[]
+      return `${initial.title}\n\n${slides.map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
+    }
+    return `${initial.title}\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital`
+  }, [initial])
+  const [customCaption, setCustomCaption] = useState(defaultCaption)
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -112,7 +122,8 @@ export default function ContentEditor({ content: initial, initialScenarios, user
         body: JSON.stringify({
           contentId: content.id,
           scenarioId: selectedScenario.id,
-          webhookUrl: selectedScenario.webhook_url // Enviamos la URL específica de la fábrica
+          webhookUrl: selectedScenario.webhook_url,
+          customCaption: customCaption.trim() || undefined // Override del caption editado por el usuario
         }),
       })
       const data = await res.json()
@@ -490,15 +501,25 @@ export default function ContentEditor({ content: initial, initialScenarios, user
             })}
           </div>
 
-          {/* Caption preview */}
+          {/* Caption editable */}
           <div className="bg-[#111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-xl p-6">
-            <h4 className="text-sm font-semibold text-slate-300 mb-3">Caption generado para publicación:</h4>
-            <div className="bg-[#0a0a0a] border border-[#222] rounded-lg p-4 text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
-              {content.title}
-              {'\n\n'}
-              {(body as CarouselSlide[]).map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}
-              {'\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital'}
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-slate-300">Caption para publicación:</h4>
+              <button
+                onClick={() => setCustomCaption(defaultCaption)}
+                className="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors"
+              >
+                Restaurar original
+              </button>
             </div>
+            <textarea
+              value={customCaption}
+              onChange={e => setCustomCaption(e.target.value)}
+              rows={8}
+              className="w-full bg-[#0a0a0a] border border-[#222] focus:border-indigo-500/50 rounded-lg p-4 text-sm text-slate-300 leading-relaxed resize-y outline-none transition-colors font-mono"
+              placeholder="Escribe tu caption personalizado aquí..."
+            />
+            <p className="text-[11px] text-slate-600 mt-1">{customCaption.length} caracteres · Edita antes de enviar a la Fábrica</p>
           </div>
         </div>
       )}
@@ -578,13 +599,25 @@ export default function ContentEditor({ content: initial, initialScenarios, user
                 )
               })}
 
-              {/* Caption preview */}
+              {/* Caption editable */}
               <div className="bg-[#111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-xl p-4 mt-4">
-                <h4 className="text-sm font-semibold text-slate-300 mb-2">Caption para publicación:</h4>
-                <div className="bg-[#0a0a0a] border border-[#222] rounded-lg p-3 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
-                  {content.title}
-                  {'\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital'}
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-slate-300">Caption para publicación:</h4>
+                  <button
+                    onClick={() => setCustomCaption(defaultCaption)}
+                    className="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors"
+                  >
+                    Restaurar original
+                  </button>
                 </div>
+                <textarea
+                  value={customCaption}
+                  onChange={e => setCustomCaption(e.target.value)}
+                  rows={7}
+                  className="w-full bg-[#0a0a0a] border border-[#222] focus:border-indigo-500/50 rounded-lg p-3 text-xs text-slate-300 leading-relaxed resize-y outline-none transition-colors font-mono"
+                  placeholder="Escribe tu caption personalizado aquí..."
+                />
+                <p className="text-[11px] text-slate-600 mt-1">{customCaption.length} caracteres</p>
               </div>
             </div>
           </div>
