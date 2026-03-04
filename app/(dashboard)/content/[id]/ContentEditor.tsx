@@ -458,49 +458,83 @@ export default function ContentEditor({ content: initial, initialScenarios, user
           </div>
 
           {/* Carousel slides preview */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {(body as CarouselSlide[]).map((slide, i) => {
-              const label = slideLabels[slide.slide_number] ?? 'Contenido'
-              const gradient = slideColors[label] ?? 'from-slate-600 to-slate-700'
-              return (
-                <div key={i} className="relative group">
-                  <div className={`aspect-[4/5] rounded-2xl ${slide.image_url ? '' : 'bg-gradient-to-br ' + gradient} p-4 flex flex-col justify-between overflow-hidden shadow-lg relative`}>
-                    {slide.image_url && (
-                      <NextImage src={slide.image_url} alt={slide.title} fill className="object-cover" sizes="(max-width: 768px) 50vw, 20vw" />
-                    )}
-                    {slide.image_url && <div className="absolute inset-0 bg-black/40" />}
+          {(() => {
+            const slides = body as CarouselSlide[]
+            const firstPublishableIndex = slides.findIndex(s => s.image_url && !s.image_url.startsWith('data:'))
+            return (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {slides.map((slide, i) => {
+                    const label = slideLabels[slide.slide_number] ?? 'Contenido'
+                    const gradient = slideColors[label] ?? 'from-slate-600 to-slate-700'
+                    const hasValidImage = !!slide.image_url && !slide.image_url.startsWith('data:')
+                    const isDataUrl = !!slide.image_url?.startsWith('data:')
+                    const willPublish = i === firstPublishableIndex
+                    return (
+                      <div key={i} className="relative group flex flex-col gap-1.5">
+                        <div className={`aspect-[4/5] rounded-2xl ${slide.image_url ? '' : 'bg-gradient-to-br ' + gradient} p-4 flex flex-col justify-between overflow-hidden shadow-lg relative ${willPublish ? 'ring-2 ring-emerald-500' : ''}`}>
+                          {slide.image_url && !isDataUrl && (
+                            <NextImage src={slide.image_url} alt={slide.title} fill className="object-cover" sizes="(max-width: 768px) 50vw, 20vw" />
+                          )}
+                          {hasValidImage && <div className="absolute inset-0 bg-black/40" />}
 
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                      {/* Slide number */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-white uppercase tracking-wider">{label}</span>
-                        <span className="text-xs font-bold text-white/70">{slide.slide_number}/10</span>
-                      </div>
-                      {/* Content */}
-                      <div className="flex-1 flex flex-col justify-center py-2">
-                        <h4 className="text-sm font-extrabold text-white leading-tight mb-1.5 drop-shadow-md">{slide.title}</h4>
-                        <p className="text-[11px] text-white/90 leading-relaxed line-clamp-4 drop-shadow-md">{slide.body}</p>
-                      </div>
-                      {/* Design notes indicator */}
-                      {slide.design_notes && (
-                        <div className="flex items-center gap-1 text-white/70">
-                          <Palette size={10} />
-                          <span className="text-[9px] truncate">{slide.design_notes}</span>
+                          <div className="relative z-10 flex flex-col h-full justify-between">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-white uppercase tracking-wider">{label}</span>
+                              <span className="text-xs font-bold text-white/70">{slide.slide_number}/10</span>
+                            </div>
+                            <div className="flex-1 flex flex-col justify-center py-2">
+                              <h4 className="text-sm font-extrabold text-white leading-tight mb-1.5 drop-shadow-md">{slide.title}</h4>
+                              <p className="text-[11px] text-white/90 leading-relaxed line-clamp-4 drop-shadow-md">{slide.body}</p>
+                            </div>
+                            {slide.design_notes && (
+                              <div className="flex items-center gap-1 text-white/70">
+                                <Palette size={10} />
+                                <span className="text-[9px] truncate">{slide.design_notes}</span>
+                              </div>
+                            )}
+                          </div>
+                          {!slide.image_url && (
+                            <>
+                              <div className="absolute top-0 right-0 w-20 h-20 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+                              <div className="absolute bottom-0 left-0 w-16 h-16 bg-black/10 rounded-full translate-y-1/2 -translate-x-1/2" />
+                            </>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    {/* Decorative elements only if no image */}
-                    {!slide.image_url && (
-                      <>
-                        <div className="absolute top-0 right-0 w-20 h-20 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-                        <div className="absolute bottom-0 left-0 w-16 h-16 bg-black/10 rounded-full translate-y-1/2 -translate-x-1/2" />
-                      </>
-                    )}
-                  </div>
+                        {/* Image status badge */}
+                        {willPublish ? (
+                          <div className="flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40">
+                            <span className="text-[10px] font-bold text-emerald-400">📤 Se publica</span>
+                          </div>
+                        ) : hasValidImage ? (
+                          <div className="flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                            <span className="text-[10px] text-slate-400">Imagen lista</span>
+                          </div>
+                        ) : isDataUrl ? (
+                          <div className="flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            <span className="text-[10px] text-amber-400">Asigna imagen</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                            <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                            <span className="text-[10px] text-slate-600">Sin imagen</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-          </div>
+                {firstPublishableIndex === -1 && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+                    <span>⚠️</span>
+                    <span>Ninguna slide tiene imagen válida. Ve a Media → asigna una imagen a la Slide 1 antes de publicar.</span>
+                  </div>
+                )}
+              </>
+            )
+          })()}
 
           {/* Caption editable */}
           <div className="bg-[#111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-xl p-6">
