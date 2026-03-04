@@ -157,7 +157,8 @@ function stripUrls(text: string): string {
 function formatForSocial(content: any) {
   if (content.type === 'carousel') {
     const slides = content.body as Array<{ slide_number: number; title: string; body: string; design_notes: string; image_url?: string }>
-    const caption = `${content.title}\n\n${slides.map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
+    const subtitle = slides[0]?.title || ''
+    const caption = `${content.title}\n\n${subtitle}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
 
     return {
       caption,

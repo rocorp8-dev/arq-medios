@@ -78,7 +78,8 @@ export default function ContentEditor({ content: initial, initialScenarios, user
   const defaultCaption = useMemo(() => {
     if (initial.type === 'carousel') {
       const slides = (Array.isArray(initial.body) ? initial.body : []) as CarouselSlide[]
-      return `${initial.title}\n\n${slides.map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
+      const subtitle = slides[0]?.title || ''
+      return `${initial.title}\n\n${subtitle}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
     }
     return `${initial.title}\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital`
   }, [initial])
