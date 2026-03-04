@@ -798,6 +798,8 @@ export default function ContentEditor({ content: initial, initialScenarios, user
                 url={slide.image_url!}
                 selected={selectedUrls.includes(slide.image_url!)}
                 onToggle={() => toggleSelection(slide.image_url!)}
+                onZoom={() => setLightboxUrl(slide.image_url!)}
+                onUse={content.type === 'carousel' ? () => { setUseInSlideUrl(slide.image_url!); setShowSlideSelector(true) } : undefined}
               />
             ))}
             {(mediaTab === 'uploads' || mediaTab === 'combined' || mediaTab === 'videos' || mediaTab === 'favorites') && mediaList.filter(m => (mediaTab === 'favorites' ? m.favorite : (m.type === mediaTab.slice(0, -1) || m.type === mediaTab))).map((media, i) => (
