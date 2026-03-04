@@ -199,7 +199,204 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
     }
 
     function handleExportBlueprint(scenario: Scenario) {
-        // Make.com-compatible module identifiers and metadata per channel based on professional examples
+        const igId = scenario.instagram_business_id || '<<INSTAGRAM_BUSINESS_ID>>'
+        const fbId = scenario.facebook_page_id || '<<FACEBOOK_PAGE_ID>>'
+        const hasIG = scenario.channels.includes('instagram')
+        const hasFB = scenario.channels.includes('facebook')
+
+        // ── TEMPLATE MASTER (Instagram + Facebook) ──────────────────────────
+        // Based on working production blueprint. Exact module names, field names
+        // and metadata structure that Make.com requires to import without errors.
+        if (hasIG && hasFB) {
+            const blueprint = {
+                name: `Arq-Medios: ${scenario.name}`,
+                flow: [
+                    {
+                        id: 1,
+                        module: 'gateway:CustomWebHook',
+                        version: 1,
+                        parameters: { hook: 0, maxResults: 1 },
+                        mapper: {},
+                        metadata: {
+                            designer: { x: 0, y: 0, name: 'Entrada Arq-Medios' },
+                            restore: {
+                                parameters: {
+                                    hook: { data: { editable: 'true' }, label: 'Selecciona tu webhook de Arq-Medios' }
+                                }
+                            },
+                            parameters: [
+                                { name: 'hook', type: 'hook:gateway-webhook', label: 'Webhook', required: true },
+                                { name: 'maxResults', type: 'number', label: 'Maximum number of results' }
+                            ]
+                        }
+                    },
+                    {
+                        id: 2,
+                        module: 'builtin:BasicRouter',
+                        version: 1,
+                        parameters: {},
+                        mapper: null,
+                        metadata: {
+                            designer: { x: 275, y: -1, name: 'Enrutador por Red' }
+                        },
+                        routes: [
+                            {
+                                flow: [
+                                    {
+                                        id: 3,
+                                        module: 'instagram-business:CreatePostPhoto',
+                                        version: 1,
+                                        parameters: {},
+                                        mapper: {
+                                            caption: '{{1.caption}}',
+                                            accountId: igId,
+                                            image_url: '{{1.images[1].image_url}}'
+                                        },
+                                        metadata: {
+                                            designer: { x: 600, y: -132, name: 'Instagram' },
+                                            restore: {
+                                                expect: {
+                                                    accountId: { mode: 'chose', label: igId },
+                                                    user_tags: { mode: 'chose' }
+                                                },
+                                                parameters: {
+                                                    __IMTCONN__: {
+                                                        data: { scoped: 'true', connection: 'facebook' },
+                                                        label: 'Selecciona tu conexión Instagram Business'
+                                                    }
+                                                }
+                                            },
+                                            parameters: [
+                                                { name: '__IMTCONN__', type: 'account:facebook', label: 'Connection', required: true }
+                                            ],
+                                            expect: [
+                                                { name: 'accountId', type: 'select', label: 'Page', required: true },
+                                                { name: 'image_url', type: 'url', label: 'Photo URL', required: true },
+                                                { name: 'caption', type: 'text', label: 'Caption' },
+                                                {
+                                                    name: 'user_tags',
+                                                    type: 'array',
+                                                    label: 'User Tags',
+                                                    spec: [
+                                                        { name: 'username', type: 'text', label: 'Username', required: true, validate: { pattern: '^(?!@)' } },
+                                                        { name: 'x', type: 'number', label: 'X position', required: true, validate: { max: 1, min: 0 } },
+                                                        { name: 'y', type: 'number', label: 'Y position', required: true, validate: { max: 1, min: 0 } }
+                                                    ]
+                                                },
+                                                { name: 'location_id', type: 'text', label: 'Location ID' }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                flow: [
+                                    {
+                                        id: 5,
+                                        module: 'http:ActionGetFile',
+                                        version: 3,
+                                        parameters: { handleErrors: true },
+                                        mapper: {
+                                            url: '{{first(map(1.images; "image_url"))}}',
+                                            method: 'get',
+                                            serializeUrl: false,
+                                            shareCookies: false
+                                        },
+                                        metadata: {
+                                            designer: { x: 594, y: 182, name: 'Descargar Imagen' },
+                                            restore: {},
+                                            parameters: [
+                                                { name: 'handleErrors', type: 'boolean', label: 'Evaluate all states as errors (except for 2xx and 3xx )', required: true }
+                                            ],
+                                            expect: [
+                                                { name: 'url', type: 'url', label: 'URL', required: true },
+                                                { name: 'serializeUrl', type: 'boolean', label: 'Serialize URL', required: true },
+                                                { name: 'method', type: 'hidden', label: 'Method' },
+                                                { name: 'shareCookies', type: 'boolean', label: 'Share cookies with other HTTP modules', required: true }
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        id: 4,
+                                        module: 'facebook-pages:UploadPhoto',
+                                        version: 6,
+                                        parameters: {},
+                                        mapper: {
+                                            data: '{{5.data}}',
+                                            message: '{{1.caption}}',
+                                            page_id: fbId,
+                                            fileName: '{{5.fileName}}'
+                                        },
+                                        metadata: {
+                                            designer: { x: 900, y: 200, name: 'Facebook Foto' },
+                                            restore: {
+                                                expect: {
+                                                    page_id: { mode: 'chose', label: fbId },
+                                                    album_id: { mode: 'chose' }
+                                                },
+                                                parameters: {
+                                                    __IMTCONN__: {
+                                                        data: { scoped: 'true', connection: 'facebook' },
+                                                        label: 'Selecciona tu conexión Facebook Pages'
+                                                    }
+                                                }
+                                            },
+                                            parameters: [
+                                                { name: '__IMTCONN__', type: 'account:facebook', label: 'Connection', required: true }
+                                            ],
+                                            expect: [
+                                                { name: 'page_id', type: 'select', label: 'Page', required: true },
+                                                { name: 'fileName', type: 'filename', label: 'File name', required: true },
+                                                { name: 'data', type: 'buffer', label: 'Data', required: true },
+                                                { name: 'message', type: 'text', label: 'Photo caption' },
+                                                { name: 'album_id', type: 'select', label: 'Album' }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                metadata: {
+                    instant: false,
+                    version: 1,
+                    scenario: { roundtrips: 1, maxErrors: 3, autoCommit: true, autoCommitTriggerLast: true, sequential: false, slots: null, confidential: false, dataloss: false, dlq: false },
+                    designer: {
+                        orphans: [],
+                        notes: [
+                            { content: '<h1>Trigger Arq-Medios</h1><p>Recibe el contenido ya optimizado por la IA de nuestra plataforma.</p>', metadata: { color: '#4B5563' }, moduleIds: [1], isFilterNote: false },
+                            { content: '<h1>Publicador Instagram Business</h1><p>Este nodo publica el contenido en tu cuenta de instagram.</p><p><b>Acción requerida:</b> Haz click en este módulo → campo "Connection" → Add → autoriza tu cuenta Instagram for Business.</p>', metadata: { color: '#E1306C' }, moduleIds: [3], isFilterNote: false },
+                            { content: '<h1>Publicador Facebook Pages</h1><p>Este nodo publica el contenido en tu cuenta de facebook.</p><p><b>Acción requerida:</b> Haz click en este módulo → campo "Connection" → Add → autoriza tu cuenta Facebook Pages.</p>', metadata: { color: '#1877F2' }, moduleIds: [4], isFilterNote: false },
+                            { content: '<h1>Descargar Imagen Real</h1><p>Convierte la URL en archivo binario para que Facebook lo reciba como FOTO, no como link. Así evitas la vista previa de tu web.</p>', metadata: { color: '#00BFFF' }, moduleIds: [5], isFilterNote: false },
+                            { content: '<h1>Subir Foto a Facebook</h1><p>Publica la imagen directamente como foto con caption. Resultado: post limpio, sin recuadro de web.</p>', metadata: { color: '#1877F2' }, moduleIds: [4], isFilterNote: false },
+                            { content: '<h1>Divisor de Canales</h1><p>Este router separa el flujo según las redes sociales seleccionadas en Arq-Medios.</p>', metadata: { color: '#9138FE' }, moduleIds: [2], isFilterNote: false }
+                        ]
+                    },
+                    zone: 'us2.make.com',
+                    notes: []
+                }
+            }
+            const json = JSON.stringify(blueprint, null, 2)
+            try {
+                const blob = new Blob([json], { type: 'application/json' })
+                const blobUrl = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = blobUrl
+                a.download = `make-blueprint-${scenario.name.toLowerCase().replace(/\s+/g, '-')}.json`
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                URL.revokeObjectURL(blobUrl)
+            } catch {
+                navigator.clipboard.writeText(json).then(() => {
+                    alert('✅ JSON copiado al portapapeles.\n\nEn Make.com: "..." → Import Blueprint → Pégalo en el editor.')
+                })
+            }
+            return
+        }
+
+        // ── FALLBACK: otros canales (LinkedIn, single channel, etc.) ─────────
         const makeModules: Record<string, any> = {
             instagram: {
                 module: 'instagram-business:CreatePostPhoto',
@@ -212,13 +409,12 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                 ]
             },
             facebook: {
-                module: 'facebook-pages:createPost',
+                module: 'facebook-pages:UploadPhoto',
                 version: 6,
                 color: '#1877F2',
                 expect: [
                     { name: 'page_id', type: 'select', label: 'Page', required: true },
-                    { name: 'message', type: 'text', label: 'Message' },
-                    { name: 'link', type: 'url', label: 'Link' }
+                    { name: 'message', type: 'text', label: 'Photo caption' }
                 ]
             },
             linkedin: {
