@@ -202,17 +202,17 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
         // Make.com-compatible module identifiers and metadata per channel based on professional examples
         const makeModules: Record<string, any> = {
             instagram: {
-                module: 'instagram-business:CreatePostPhoto',
+                module: 'instagram-business:createPost',
                 version: 1,
                 color: '#E1306C',
                 expect: [
-                    { name: 'accountId', type: 'select', label: 'Page', required: true },
+                    { name: 'instagram_business_account_id', type: 'text', label: 'Instagram Business Account ID', required: true },
                     { name: 'image_url', type: 'url', label: 'Photo URL', required: true },
                     { name: 'caption', type: 'text', label: 'Caption' }
                 ]
             },
             facebook: {
-                module: 'facebook-pages:CreatePost',
+                module: 'facebook-pages:createPost',
                 version: 6,
                 color: '#1877F2',
                 expect: [
@@ -249,17 +249,20 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                 designer: { x: 0, y: 0, name: 'Entrada Arq-Medios' },
                 restore: { parameters: { __IMTHOOK__: { label: 'Arq-Medios Webhook' } } },
                 expect: [
-                    { name: 'page_id', type: 'text', label: 'Facebook Page ID' },
-                    { name: 'instagram_id', type: 'text', label: 'Instagram Business ID' },
-                    { name: 'title', type: 'text' },
-                    { name: 'caption', type: 'text' },
-                    { name: 'url', type: 'url' },
+                    { name: 'page_id', type: 'text', label: 'Facebook Page ID (requerido)' },
+                    { name: 'instagram_id', type: 'text', label: 'Instagram Business Account ID (requerido)' },
+                    { name: 'title', type: 'text', label: 'Título del contenido' },
+                    { name: 'caption', type: 'text', label: 'Texto del post (sin URLs)' },
+                    { name: 'image_url', type: 'url', label: 'URL imagen principal → Photo URL / HTTP download' },
+                    { name: 'link_url', type: 'url', label: 'URL de referencia de la página (separada de imagen)' },
+                    { name: 'url', type: 'url', label: 'Alias legacy de link_url' },
                     {
                         name: 'images',
                         type: 'array',
+                        label: 'Array de imágenes (carrusel)',
                         spec: {
                             type: 'collection',
-                            spec: [{ name: 'image_url', type: 'url' }]
+                            spec: [{ name: 'image_url', type: 'url', label: 'URL de cada imagen del carrusel' }]
                         }
                     }
                 ]
@@ -387,10 +390,82 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
 
                     notes.push({
                         moduleIds: [pubId],
-                        content: `<h1>Publicador ${channelModules[ch]?.name}</h1><p>Este nodo publica el contenido en tu cuenta de ${ch}.</p><p><b>Recordatorio:</b> Debes conectar tu cuenta profesional de ${ch} en el campo 'Connection'.</p>`,
+                        content: `<h1>Publicador ${channelModules[ch]?.name}</h1><p>Este nodo publica el contenido en tu cuenta de ${ch}.</p><p><b>Acción requerida:</b> Haz click en este módulo → campo "Connection" → Add → autoriza tu cuenta ${ch === 'instagram' ? 'Instagram for Business' : ch === 'facebook' ? 'Facebook Pages' : ch}.</p>`,
                         isFilterNote: false,
                         metadata: { color: modCfg.color }
                     })
+
+                    if (ch === 'facebook') {
+                        // Facebook needs 2 steps: HTTP download image → Upload as Photo (no link preview)
+                        const httpFbId = moduleId++
+
+                        notes.push({
+                            moduleIds: [httpFbId],
+                            content: "<h1>Descargar Imagen Real</h1><p>Convierte la URL en archivo binario para que Facebook lo reciba como FOTO, no como link. Así evitas la vista previa de tu web.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#00BFFF' }
+                        }, {
+                            moduleIds: [pubId],
+                            content: "<h1>Subir Foto a Facebook</h1><p>Publica la imagen directamente como foto con caption. Resultado: post limpio, sin recuadro de web.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#1877F2' }
+                        })
+
+                        return {
+                            flow: [
+                                {
+                                    id: httpFbId,
+                                    module: 'http:ActionGetFile',
+                                    version: 3,
+                                    parameters: { handleErrors: true },
+                                    mapper: {
+                                        url: `{{first(map(${webhookId}.images; "image_url"))}}`,
+                                        method: 'get'
+                                    },
+                                    metadata: { designer: { x: routerStartX + 300, y: i * 200, name: 'Descargar Imagen' } }
+                                },
+                                {
+                                    id: pubId,
+                                    module: 'facebook-pages:uploadPhoto',
+                                    version: 1,
+                                    parameters: {},
+                                    mapper: {
+                                        caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
+                                        photo: `{{${httpFbId}.data}}`,
+                                        page_id: `{{${webhookId}.page_id}}`,
+                                        published: true
+                                    },
+                                    metadata: {
+                                        designer: { x: routerStartX + 600, y: i * 200, name: 'Facebook Pura Foto' },
+                                        restore: { parameters: { __IMTCONN__: { label: 'Conexión Facebook Pages' } } }
+                                    }
+                                }
+                            ],
+                            label: 'Hacia Facebook Pages',
+                            filter: {
+                                name: 'Validar imagen Facebook',
+                                conditions: [[{ a: `{{${webhookId}.image_url}}`, o: 'exists' }]]
+                            }
+                        }
+                    }
+
+                    // Instagram — single module, image URL comes directly from payload
+                    const channelMapper: Record<string, any> = ch === 'instagram' ? {
+                        instagram_business_account_id: `{{${webhookId}.instagram_id}}`,
+                        caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
+                        image_url: `{{${webhookId}.image_url}}`
+                    } : {
+                        content: `{{${webhookId}.caption}}`,
+                        url: `{{${webhookId}.url}}`
+                    }
+
+                    // Add filter on Instagram route to avoid errors when image_url is missing
+                    const routeFilter = ch === 'instagram' ? {
+                        filter: {
+                            name: 'Validar URL Imagen',
+                            conditions: [[{ a: `{{${webhookId}.image_url}}`, o: 'exists' }]]
+                        }
+                    } : {}
 
                     return {
                         flow: [{
@@ -398,16 +473,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             module: modCfg.module,
                             version: modCfg.version,
                             parameters: {},
-                            mapper: {
-                                // Mapeo inteligente usando la estructura plana
-                                page_id: `{{${webhookId}.page_id}}`,
-                                message: `{{${webhookId}.caption}}`,
-                                caption: `{{${webhookId}.caption}}`,
-                                content: `{{${webhookId}.caption}}`,
-                                image_url: `{{${webhookId}.images[1].image_url}}`, // First image fallback
-                                link: `{{${webhookId}.url}}`,
-                                url: `{{${webhookId}.url}}`
-                            },
+                            mapper: channelMapper,
                             metadata: {
                                 designer: { x: routerStartX + 300, y: i * 200, name: `Publicar en ${ch}` },
                                 restore: {
@@ -418,7 +484,8 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                 expect: modCfg.expect
                             }
                         }],
-                        label: `Hacia ${channelModules[ch]?.name || ch}`
+                        label: `Hacia ${channelModules[ch]?.name || ch}`,
+                        ...routeFilter
                     }
                 })
             })
@@ -506,18 +573,68 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                 const pubId = moduleId++
                 const modCfg = makeModules[ch] || { module: `${ch}:CreatePost`, version: 1, color: '#6366F1' }
 
+                if (ch === 'facebook') {
+                    // Facebook: HTTP download → createPhoto (avoids link preview)
+                    const httpFbId = moduleId++
+
+                    notes.push({
+                        moduleIds: [httpFbId],
+                        content: "<h1>Descargar Imagen Real</h1><p>Convierte la URL en archivo binario para que Facebook lo reciba como FOTO, no como link. Así evitas la vista previa de tu web.</p>",
+                        isFilterNote: false,
+                        metadata: { color: '#00BFFF' }
+                    }, {
+                        moduleIds: [pubId],
+                        content: "<h1>Subir Foto a Facebook</h1><p>Post limpio: foto directa + caption. Sin recuadro de web.</p>",
+                        isFilterNote: false,
+                        metadata: { color: '#1877F2' }
+                    })
+
+                    flow.push(
+                        {
+                            id: httpFbId,
+                            module: 'http:ActionGetFile',
+                            version: 3,
+                            parameters: { handleErrors: true },
+                            mapper: {
+                                url: `{{first(map(${webhookId}.images; "image_url"))}}`,
+                                method: 'get'
+                            },
+                            metadata: { designer: { x: routerStartX + 300, y: 0, name: 'Descargar Imagen' } }
+                        },
+                        {
+                            id: pubId,
+                            module: 'facebook-pages:uploadPhoto',
+                            version: 1,
+                            parameters: {},
+                            mapper: {
+                                caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
+                                photo: `{{${httpFbId}.data}}`,
+                                page_id: `{{${webhookId}.page_id}}`,
+                                published: true
+                            },
+                            metadata: {
+                                designer: { x: routerStartX + 600, y: 0, name: 'Facebook Pura Foto' },
+                                restore: { parameters: { __IMTCONN__: { label: 'Conexión Facebook Pages' } } }
+                            }
+                        }
+                    )
+                } else {
+                // Instagram / others: single module
+                const channelMapper: Record<string, any> = ch === 'instagram' ? {
+                    instagram_business_account_id: `{{${webhookId}.instagram_id}}`,
+                    caption: `{{ifempty(${webhookId}.caption; "Nueva publicación")}}`,
+                    image_url: `{{${webhookId}.image_url}}`
+                } : {
+                    content: `{{${webhookId}.caption}}`,
+                    url: `{{${webhookId}.url}}`
+                }
+
                 flow.push({
                     id: pubId,
                     module: modCfg.module,
                     version: modCfg.version,
                     parameters: {},
-                    mapper: {
-                        message: `{{${webhookId}.caption}}`,
-                        caption: `{{${webhookId}.caption}}`,
-                        content: `{{${webhookId}.caption}}`,
-                        image_url: `{{${webhookId}.images[1].image_url}}`,
-                        url: `{{${webhookId}.url}}`
-                    },
+                    mapper: channelMapper,
                     metadata: {
                         designer: { x: routerStartX + 300, y: 0, name: `Publicar en ${ch}` },
                         restore: {
@@ -535,6 +652,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                     isFilterNote: false,
                     metadata: { color: modCfg.color }
                 })
+                } // end else (non-facebook single channel)
             }
         }
 
@@ -1140,16 +1258,34 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             <div className="flex gap-4">
                                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold">3</div>
                                 <div className="flex-1">
-                                    <h3 className="text-base font-bold text-slate-100 mb-2">Agregar módulos de publicación</h3>
+                                    <h3 className="text-base font-bold text-slate-100 mb-2">Módulos de publicación incluidos en el Blueprint</h3>
                                     <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 text-sm text-slate-400 space-y-3">
-                                        <p>Después del webhook, agrega un módulo por cada red social:</p>
+                                        <p>El blueprint ya incluye el flujo correcto por canal:</p>
                                         {guideScenario.channels.map(ch => (
                                             <div key={ch} className="flex items-start gap-3 p-3 bg-[#111] rounded-lg border border-[#222]">
                                                 {(() => { const Icon = channelIcons[ch as keyof typeof channelIcons] || Instagram; return <Icon size={20} className="text-indigo-400 mt-0.5" /> })()}
                                                 <div>
                                                     <p className="text-slate-200 font-bold text-sm">{channelModules[ch]?.name || ch}</p>
-                                                    <p className="text-slate-500 text-xs mt-0.5">{channelModules[ch]?.description}</p>
-                                                    <p className="text-xs mt-1">Módulo: <strong className="text-indigo-400">{channelModules[ch]?.apiModule}</strong></p>
+                                                    {ch === 'facebook' && (
+                                                        <div className="mt-1.5 space-y-1 text-xs">
+                                                            <p className="text-slate-400">Flow de <strong className="text-cyan-400">2 pasos</strong> para post limpio (sin vista previa de web):</p>
+                                                            <p>① <strong className="text-slate-300">HTTP Get File</strong> → descarga la imagen como binario</p>
+                                                            <p>② <strong className="text-slate-300">facebook-pages:uploadPhoto</strong> → sube el archivo como foto pura</p>
+                                                            <p className="text-emerald-400 font-medium">✓ Sin campo &quot;Link&quot; = sin tarjeta gris de tu web</p>
+                                                        </div>
+                                                    )}
+                                                    {ch === 'instagram' && (
+                                                        <div className="mt-1.5 text-xs text-slate-400">
+                                                            <p>Módulo: <strong className="text-indigo-400">instagram-business:createPost</strong></p>
+                                                            <p className="mt-0.5">La URL de imagen se pasa directamente como <code className="bg-[#1a1a1a] px-1 rounded">image_url</code></p>
+                                                        </div>
+                                                    )}
+                                                    {ch === 'linkedin' && (
+                                                        <div className="mt-1.5 space-y-1 text-xs text-slate-400">
+                                                            <p>Flow de <strong className="text-blue-400">5 pasos</strong> para carrusel con imágenes:</p>
+                                                            <p>Iterator → HTTP Download → Upload → Aggregate URNs → Create Post</p>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -1167,11 +1303,29 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                         {guideScenario.channels.map(ch => (
                                             <div key={ch} className="flex items-start gap-3 p-3 bg-[#111] rounded-lg border border-[#222]">
                                                 {(() => { const Icon = channelIcons[ch as keyof typeof channelIcons] || Instagram; return <Icon size={16} className="text-indigo-400 mt-0.5 flex-shrink-0" /> })()}
-                                                <div className="text-xs space-y-1">
+                                                <div className="text-xs space-y-1.5">
                                                     <p className="text-slate-200 font-bold">{channelModules[ch]?.name || ch}</p>
-                                                    {ch === 'instagram' && <p>Necesitas una cuenta <strong className="text-slate-300">Instagram Business</strong> conectada a una <strong className="text-slate-300">Página de Facebook</strong>. En Make.com conecta con <strong className="text-indigo-400">Instagram for Business</strong>.</p>}
-                                                    {ch === 'facebook' && <p>Conecta tu <strong className="text-slate-300">Página de Facebook</strong> (no perfil personal). En Make.com usa <strong className="text-indigo-400">Facebook Pages → Create a Post</strong>.</p>}
-                                                    {ch === 'linkedin' && <p>Conecta tu cuenta de <strong className="text-slate-300">LinkedIn</strong>. En Make.com usa <strong className="text-indigo-400">LinkedIn → Create a Post</strong>.</p>}
+                                                    {ch === 'instagram' && (
+                                                        <>
+                                                            <p>1. Haz click en el módulo → campo <strong className="text-white">&quot;Connection&quot;</strong> → <strong className="text-indigo-400">Add</strong> → Autoriza con <strong className="text-white">Instagram for Business</strong></p>
+                                                            <p>2. En el campo <strong className="text-white">&quot;Account&quot;</strong> (accountId) → selecciona tu cuenta <strong className="text-slate-300">Instagram Business</strong> del dropdown</p>
+                                                            <p className="text-amber-400">⚠️ Si ves <code className="bg-[#1a1a1a] px-1 rounded">BundleValidationError: Missing accountId</code> → es porque olvidaste este paso</p>
+                                                        </>
+                                                    )}
+                                                    {ch === 'facebook' && (
+                                                        <>
+                                                            <p>1. Módulo <strong className="text-cyan-400">HTTP Get File</strong> → no requiere conexión, solo descarga la imagen</p>
+                                                            <p>2. Módulo <strong className="text-blue-400">Facebook Pages → Upload a Photo</strong> → campo <strong className="text-white">&quot;Connection&quot;</strong> → <strong className="text-indigo-400">Add</strong> → autoriza tu página</p>
+                                                            <p>3. El campo <strong className="text-white">&quot;Page&quot;</strong> viene del webhook (<code className="bg-[#1a1a1a] px-1 rounded">page_id</code>)</p>
+                                                            <p className="text-emerald-400">✓ NO hay campo &quot;Link&quot; → Facebook NO genera vista previa de tu web</p>
+                                                        </>
+                                                    )}
+                                                    {ch === 'linkedin' && (
+                                                        <>
+                                                            <p>1. Campo <strong className="text-white">&quot;Connection&quot;</strong> → <strong className="text-indigo-400">Add</strong> → Autoriza con tu cuenta de LinkedIn</p>
+                                                            <p>2. El post se publicará en tu perfil/página de LinkedIn automáticamente</p>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -1188,21 +1342,28 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                         <p>Arq-Medios envía este payload — úsalos en los campos de Make.com:</p>
                                         <div className="bg-[#0d0d0d] rounded-lg p-3 font-mono text-xs text-slate-300 overflow-x-auto">
                                             <pre>{`{
-  "page_id":       "tu-facebook-page-id",
-  "instagram_id":  "tu-instagram-business-id",
-  "caption":       "Caption listo para publicar",
-  "title":         "Título del post",
+  "page_id":    "TU_PAGE_ID_NUMERICO",
+  "instagram_id": "TU_INSTAGRAM_BUSINESS_ID",
+  "caption":    "Texto del post (sin URLs)",
+  "title":      "Título del contenido",
+  "image_url":  "https://cdn.../imagen-principal.jpg",
+  "link_url":   "https://arq-medios.com/content/xxx",
   "images": [
-    { "image_url": "https://..." },
-    { "image_url": "https://..." }
+    { "image_url": "https://cdn.../foto1.jpg" },
+    { "image_url": "https://cdn.../foto2.jpg" }
   ]
 }`}</pre>
                                         </div>
                                         <div className="space-y-1.5 text-xs mt-2">
-                                            <p><strong className="text-slate-200">Caption/Texto del post:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.caption}}'}</code></p>
-                                            <p><strong className="text-slate-200">Primera imagen:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.images[].image_url}}'}</code></p>
+                                            <p><strong className="text-slate-200">Texto del post:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.caption}}'}</code> <span className="text-emerald-500">✓ URLs auto-eliminadas</span></p>
+                                            <p><strong className="text-slate-200">Imagen principal:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.image_url}}'}</code> ← Photo URL / HTTP download / Instagram</p>
+                                            <p><strong className="text-slate-200">Carrusel de imágenes:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.images[]}}'}</code> ← array para Instagram carousel / LinkedIn</p>
                                             <p><strong className="text-slate-200">Page ID (Facebook):</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.page_id}}'}</code></p>
-                                            <p><strong className="text-slate-200">Instagram ID:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.instagram_id}}'}</code></p>
+                                            <p><strong className="text-slate-200">Instagram Business ID:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.instagram_id}}'}</code></p>
+                                            <p><strong className="text-slate-200">Link de referencia:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.link_url}}'}</code> ← URL de la página (NO la imagen)</p>
+                                        </div>
+                                        <div className="mt-3 p-2 bg-emerald-500/5 border border-emerald-500/15 rounded-lg text-[11px] text-emerald-400">
+                                            ✓ <strong>Auto-limpieza activada:</strong> Arq-Medios elimina automáticamente cualquier URL del caption antes de enviarlo. Facebook y Instagram reciben texto limpio sin links, por lo que <strong>no se genera la tarjeta de vista previa de tu web</strong>.
                                         </div>
                                     </div>
                                 </div>
@@ -1225,8 +1386,16 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
 
                             {/* Troubleshooting */}
                             <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                                <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-2">Si no llega a Instagram/Facebook:</p>
-                                <ul className="text-xs text-slate-400 space-y-1">
+                                <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">Errores comunes y soluciones:</p>
+                                <ul className="text-xs text-slate-400 space-y-2">
+                                    <li className="p-2 bg-red-500/5 border border-red-500/15 rounded-lg">
+                                        <strong className="text-red-400 block mb-0.5">❗ BundleValidationError: Missing value of required parameter &apos;accountId&apos;</strong>
+                                        Abre el módulo de Instagram Business → campo <strong className="text-slate-300">&quot;Account&quot;</strong> → selecciona tu cuenta Instagram Business del dropdown. Debes conectar primero en &quot;Connection&quot;.
+                                    </li>
+                                    <li className="p-2 bg-amber-500/5 border border-amber-500/15 rounded-lg">
+                                        <strong className="text-amber-400 block mb-0.5">⚠️ Facebook muestra tarjeta de vista previa de tu web</strong>
+                                        El caption llega con un URL dentro del texto. Arq-Medios ya elimina URLs automáticamente del campo <code className="bg-[#1a1a1a] px-1 rounded">caption</code>. Si persiste, verifica que el módulo de Facebook sea <strong className="text-slate-300">createPhoto</strong> (no createPost) y que no hayas añadido un campo <code className="bg-[#1a1a1a] px-1 rounded">link</code> al mapper.
+                                    </li>
                                     <li>• Verifica que la cuenta conectada en Make.com sea <strong className="text-slate-300">Business/Creator</strong>, no personal</li>
                                     <li>• Verifica que el toggle del escenario esté en <strong className="text-slate-300">ON</strong> (no solo &quot;Run Once&quot;)</li>
                                     <li>• Revisa el historial en Make.com: <strong className="text-slate-300">History</strong> → ver si hay errores de conexión</li>

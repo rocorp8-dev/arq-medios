@@ -57,6 +57,16 @@ export async function POST(request: Request) {
   // Format payload for Make.com according to Spec "Web to Social Media via AI"
   const socialData = formatForSocial(content)
 
+  // Build images array
+  const imagesArray = content.type === 'carousel'
+    ? (content.body as any[])
+      .map((s: any) => ({ image_url: s.image_url }))
+      .filter((img: any) => img.image_url && !img.image_url.startsWith('data:'))
+    : (socialData.image_url ? [{ image_url: socialData.image_url }] : [])
+
+  // First image URL as a direct top-level field — used by Make.com HTTP download modules
+  const firstImageUrl = imagesArray[0]?.image_url || null
+
   // Specification: Flat structure in root for direct mapping in Make.com
   const payload = {
     // Social IDs (Fetched from DB or Placeholders)
@@ -65,16 +75,14 @@ export async function POST(request: Request) {
 
     // Post Content
     title: content.title,
-    caption: socialData.caption,
-    url: `https://arq-medios.com/content/${content.id}`, // Link de referencia
+    caption: stripUrls(socialData.caption), // URLs stripped server-side → prevents Facebook link preview card
+    image_url: firstImageUrl,   // Primera imagen directa → para HTTP download / Instagram / Facebook Photo URL
+    link_url: `https://arq-medios.com/content/${content.id}`, // Referencia de la página — separado de la imagen
+    url: `https://arq-medios.com/content/${content.id}`, // Alias legacy de link_url
 
     // Media: Carousel or single image
     // Spec: images must be a list of objects with { image_url: "..." }
-    images: content.type === 'carousel'
-      ? (content.body as any[])
-        .map(s => ({ image_url: s.image_url }))
-        .filter(img => img.image_url && !img.image_url.startsWith('data:'))
-      : (socialData.image_url ? [{ image_url: socialData.image_url }] : []),
+    images: imagesArray,
 
     // Internal Metadata for tracking (Optional, in root)
     content_id: content.id,
@@ -135,6 +143,15 @@ export async function POST(request: Request) {
       error: `Error de conexión: ${err.message || 'No se pudo contactar con el destino'}. Verifica la URL del Webhook.`
     }, { status: 500 })
   }
+}
+
+/** Removes any URLs from a caption so Facebook/Instagram don't generate link preview cards */
+function stripUrls(text: string): string {
+  return text
+    .replace(/https?:\/\/[^\s]+/g, '')  // remove http/https URLs
+    .replace(/[ \t]+\n/g, '\n')          // clean trailing spaces before newlines
+    .replace(/\n{3,}/g, '\n\n')          // collapse triple+ newlines to double
+    .trim()
 }
 
 function formatForSocial(content: any) {
