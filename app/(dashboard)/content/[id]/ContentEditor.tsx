@@ -841,41 +841,65 @@ export default function ContentEditor({ content: initial, initialScenarios, user
       )}
 
       {/* Slide Selector Modal */}
-      {showSlideSelector && (
-        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
-          <div className="bg-[#111] border border-[#2a2a2a] w-full max-w-md rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-3">
-              <Layers className="text-indigo-500" /> Usar en Carrusel
-            </h3>
-            <p className="text-sm text-slate-400 mb-8">Selecciona en qué slide deseas colocar esta imagen.</p>
+      {showSlideSelector && (() => {
+        const slides = body as CarouselSlide[]
+        const firstPublishable = slides.findIndex(s => s.image_url && !s.image_url.startsWith('data:'))
+        return (
+          <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
+            <div className="bg-[#111] border border-[#2a2a2a] w-full max-w-lg rounded-3xl p-6 shadow-2xl">
+              <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                <Layers size={18} className="text-indigo-500" /> ¿En qué slide poner la imagen?
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">La imagen marcada con <span className="text-emerald-400 font-semibold">📤 Se publica</span> es la que Make.com va a subir. Asigna tu imagen ahí.</p>
 
-            <div className="grid grid-cols-2 gap-3 mb-8">
-              {Array.from({ length: 10 }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleReplaceSlide(useInSlideUrl!, i)}
-                  className="flex items-center gap-3 p-4 rounded-xl border border-[#2a2a2a] hover:border-indigo-500/50 hover:bg-indigo-500/10 transition group text-left"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex items-center justify-center text-xs font-bold text-slate-400 group-hover:text-indigo-400 transition">
-                    {i + 1}
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-200">{slideLabels[i + 1]}</p>
-                    <p className="text-[10px] text-slate-500">Slide {i + 1}</p>
-                  </div>
-                </button>
-              ))}
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {slides.map((slide, i) => {
+                  const hasValid = !!slide.image_url && !slide.image_url.startsWith('data:')
+                  const willPublish = i === firstPublishable
+                  const isRecommended = i === 0 || (!hasValid && i < firstPublishable)
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => handleReplaceSlide(useInSlideUrl!, i)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition text-left group ${willPublish ? 'border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10' : 'border-[#2a2a2a] hover:border-indigo-500/50 hover:bg-indigo-500/5'}`}
+                    >
+                      {/* Thumbnail */}
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0 relative">
+                        {slide.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={slide.image_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-600 text-xs font-bold">{slide.slide_number}</div>
+                        )}
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-200 truncate">{slide.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-slate-600">Slide {slide.slide_number}</span>
+                          {willPublish && <span className="text-[10px] font-bold text-emerald-400">📤 Se publica aquí</span>}
+                          {!hasValid && !willPublish && <span className="text-[10px] text-amber-500">Sin imagen válida</span>}
+                        </div>
+                      </div>
+                      {/* Arrow */}
+                      <span className="text-slate-600 group-hover:text-indigo-400 transition text-lg">→</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <button
+                onClick={() => { setShowSlideSelector(false); setUseInSlideUrl(null) }}
+                className="w-full mt-4 py-3 text-sm font-bold text-slate-500 hover:text-white transition"
+              >
+                Cancelar
+              </button>
             </div>
-
-            <button
-              onClick={() => { setShowSlideSelector(false); setUseInSlideUrl(null); }}
-              className="w-full py-4 text-sm font-bold text-slate-400 hover:text-white transition"
-            >
-              Cancelar
-            </button>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
