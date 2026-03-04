@@ -134,15 +134,24 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
             })
             .eq('id', id)
 
-        if (!error) {
-            setScenarios(scenarios.map(s => s.id === id ? {
-                ...s,
-                webhook_url: editWebhookUrl,
-                facebook_page_id: fbPageId,
-                instagram_business_id: igBusId
-            } : s))
-            setEditingWebhook(null)
+        if (error) {
+            console.error('Save error:', error)
+            if (error.message?.includes('column') || error.code === 'PGRST204' || error.code === '42703') {
+                alert('⚠️ Error: Las columnas facebook_page_id e instagram_business_id no existen en Supabase.\n\nVe a Supabase → SQL Editor y ejecuta:\n\nALTER TABLE public.scenarios\n  ADD COLUMN IF NOT EXISTS facebook_page_id TEXT,\n  ADD COLUMN IF NOT EXISTS instagram_business_id TEXT;')
+            } else {
+                alert('Error al guardar: ' + error.message)
+            }
+            setSavingWebhook(false)
+            return
         }
+
+        setScenarios(scenarios.map(s => s.id === id ? {
+            ...s,
+            webhook_url: editWebhookUrl,
+            facebook_page_id: fbPageId,
+            instagram_business_id: igBusId
+        } : s))
+        setEditingWebhook(null)
         setSavingWebhook(false)
     }
 
@@ -563,13 +572,23 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
             }
         }
 
-        const blob = new Blob([JSON.stringify(blueprint, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `make-blueprint-${scenario.name.toLowerCase().replace(/\s+/g, '-')}.json`
-        a.click()
-        URL.revokeObjectURL(url)
+        const json = JSON.stringify(blueprint, null, 2)
+        try {
+            const blob = new Blob([json], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `make-blueprint-${scenario.name.toLowerCase().replace(/\s+/g, '-')}.json`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+        } catch {
+            // Fallback: copy to clipboard
+            navigator.clipboard.writeText(json).then(() => {
+                alert('✅ El navegador bloqueó la descarga. El JSON fue copiado al portapapeles.\n\nEn Make.com: "..." → Import Blueprint → Pégalo en el editor de texto.')
+            })
+        }
     }
 
 
@@ -1064,15 +1083,32 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                     <p className="text-sm text-slate-400 leading-relaxed mb-4">
                                         Hemos generado un archivo con toda la lógica (webhook + router + módulos) lista para usar.
                                     </p>
-                                    <button
-                                        onClick={() => { handleExportBlueprint(guideScenario); }}
-                                        className="inline-flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20"
-                                    >
-                                        <Download size={16} />
-                                        Descargar y Usar en Make.com
-                                    </button>
-                                    <div className="mt-4 text-[11px] text-slate-500 italic">
-                                        * En Make.com: Crea escenario → Click &quot;...&quot; (abajo) → Import Blueprint → Sube este archivo.
+                                    <div className="flex flex-wrap gap-3">
+                                        <button
+                                            onClick={() => { handleExportBlueprint(guideScenario); }}
+                                            className="inline-flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20"
+                                        >
+                                            <Download size={16} />
+                                            Descargar .json
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                handleExportBlueprint(guideScenario)
+                                                setTimeout(async () => {
+                                                    try {
+                                                        await navigator.clipboard.writeText(JSON.stringify({ scenario: guideScenario.name, channels: guideScenario.channels }, null, 2))
+                                                    } catch { }
+                                                }, 100)
+                                            }}
+                                            className="inline-flex items-center gap-2 px-6 py-2 bg-[#0a0a0a] hover:bg-[#111] border border-[#333] text-slate-300 text-sm font-bold rounded-xl transition-all"
+                                        >
+                                            <Copy size={16} />
+                                            Copiar JSON
+                                        </button>
+                                    </div>
+                                    <div className="mt-4 space-y-1 text-[11px] text-slate-500 italic">
+                                        <p>* En Make.com: Crea escenario → Click &quot;...&quot; (abajo izquierda) → Import Blueprint → Sube el .json.</p>
+                                        <p>* Si el navegador bloquea la descarga, usa &quot;Copiar JSON&quot; y en Make.com pégalo en el editor de blueprint.</p>
                                     </div>
                                 </div>
                             </div>
@@ -1125,47 +1161,77 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             <div className="flex gap-4">
                                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold">4</div>
                                 <div className="flex-1">
-                                    <h3 className="text-base font-bold text-slate-100 mb-2">Mapear los campos del payload</h3>
-                                    <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 text-sm text-slate-400 space-y-2">
-                                        <p>Arq-Medios envía este payload a Make.com:</p>
-                                        <div className="bg-[#0d0d0d] rounded-lg p-3 font-mono text-xs text-slate-300 overflow-x-auto">
-                                            <pre>{`{
-  "meta": {
-    "content_id": "uuid",
-    "type": "carousel | reel",
-    "title": "Título del post",
-    "platform": "instagram | facebook | both"
-  },
-  "automation": {
-    "caption": "Caption listo para publicar",
-    "main_content": "Contenido principal",
-    "media_urls": ["url1.jpg", "url2.jpg"]
-  }
-}`}</pre>
-                                        </div>
-                                        <p className="mt-2">En Make.com, mapea estos campos:</p>
-                                        <ul className="space-y-1 text-xs">
-                                            <li><strong className="text-slate-200">Caption/Texto:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-indigo-400">automation.caption</code></li>
-                                            <li><strong className="text-slate-200">Imágenes:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-indigo-400">automation.media_urls</code></li>
-                                            <li><strong className="text-slate-200">Contenido:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-indigo-400">automation.main_content</code></li>
-                                        </ul>
+                                    <h3 className="text-base font-bold text-slate-100 mb-2">Conectar tus cuentas en Make.com</h3>
+                                    <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 text-sm text-slate-400 space-y-3">
+                                        <p>En cada módulo de publicación, haz click en <strong className="text-slate-200">&quot;Add&quot;</strong> / <strong className="text-slate-200">&quot;Connection&quot;</strong>:</p>
+                                        {guideScenario.channels.map(ch => (
+                                            <div key={ch} className="flex items-start gap-3 p-3 bg-[#111] rounded-lg border border-[#222]">
+                                                {(() => { const Icon = channelIcons[ch as keyof typeof channelIcons] || Instagram; return <Icon size={16} className="text-indigo-400 mt-0.5 flex-shrink-0" /> })()}
+                                                <div className="text-xs space-y-1">
+                                                    <p className="text-slate-200 font-bold">{channelModules[ch]?.name || ch}</p>
+                                                    {ch === 'instagram' && <p>Necesitas una cuenta <strong className="text-slate-300">Instagram Business</strong> conectada a una <strong className="text-slate-300">Página de Facebook</strong>. En Make.com conecta con <strong className="text-indigo-400">Instagram for Business</strong>.</p>}
+                                                    {ch === 'facebook' && <p>Conecta tu <strong className="text-slate-300">Página de Facebook</strong> (no perfil personal). En Make.com usa <strong className="text-indigo-400">Facebook Pages → Create a Post</strong>.</p>}
+                                                    {ch === 'linkedin' && <p>Conecta tu cuenta de <strong className="text-slate-300">LinkedIn</strong>. En Make.com usa <strong className="text-indigo-400">LinkedIn → Create a Post</strong>.</p>}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Step 5 */}
+                            {/* Step 5 - Payload */}
                             <div className="flex gap-4">
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-sm font-bold">5</div>
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold">5</div>
                                 <div className="flex-1">
-                                    <h3 className="text-base font-bold text-slate-100 mb-2">Activar y probar</h3>
+                                    <h3 className="text-base font-bold text-slate-100 mb-2">Mapear campos en Make.com</h3>
                                     <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 text-sm text-slate-400 space-y-2">
-                                        <p>1. Activa el escenario en Make.com (botón <strong className="text-slate-200">&quot;ON&quot;</strong>)</p>
-                                        <p>2. Ve a cualquier contenido en Arq-Medios</p>
-                                        <p>3. Selecciona esta fábrica en el selector <strong className="text-slate-200">&quot;Fábrica&quot;</strong></p>
-                                        <p>4. Click en <strong className="text-emerald-400">&quot;Enviar a Fábrica&quot;</strong></p>
-                                        <p>5. Verifica en Make.com que recibió el payload</p>
+                                        <p>Arq-Medios envía este payload — úsalos en los campos de Make.com:</p>
+                                        <div className="bg-[#0d0d0d] rounded-lg p-3 font-mono text-xs text-slate-300 overflow-x-auto">
+                                            <pre>{`{
+  "page_id":       "tu-facebook-page-id",
+  "instagram_id":  "tu-instagram-business-id",
+  "caption":       "Caption listo para publicar",
+  "title":         "Título del post",
+  "images": [
+    { "image_url": "https://..." },
+    { "image_url": "https://..." }
+  ]
+}`}</pre>
+                                        </div>
+                                        <div className="space-y-1.5 text-xs mt-2">
+                                            <p><strong className="text-slate-200">Caption/Texto del post:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.caption}}'}</code></p>
+                                            <p><strong className="text-slate-200">Primera imagen:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.images[].image_url}}'}</code></p>
+                                            <p><strong className="text-slate-200">Page ID (Facebook):</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.page_id}}'}</code></p>
+                                            <p><strong className="text-slate-200">Instagram ID:</strong> <code className="bg-[#1a1a1a] px-1.5 py-0.5 rounded text-emerald-400">{'{{1.instagram_id}}'}</code></p>
+                                        </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Step 6 - Activate */}
+                            <div className="flex gap-4">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white text-sm font-bold">6</div>
+                                <div className="flex-1">
+                                    <h3 className="text-base font-bold text-slate-100 mb-2">Activar escenario y disparar desde Arq-Medios</h3>
+                                    <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-4 text-sm text-slate-400 space-y-2">
+                                        <p>1. En Make.com activa el escenario con el toggle <strong className="text-white">ON</strong></p>
+                                        <p>2. En Arq-Medios ve a un <strong className="text-white">contenido listo</strong> (con imágenes generadas)</p>
+                                        <p>3. En el header del editor, selecciona <strong className="text-white">&quot;{guideScenario.name}&quot;</strong> en el dropdown de Fábrica</p>
+                                        <p>4. Click en <strong className="text-emerald-400">🚀 Enviar a Fábrica</strong></p>
+                                        <p>5. En Make.com verás los módulos encenderse en <strong className="text-emerald-400">verde</strong> — eso significa que el contenido fue publicado</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Troubleshooting */}
+                            <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                                <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-2">Si no llega a Instagram/Facebook:</p>
+                                <ul className="text-xs text-slate-400 space-y-1">
+                                    <li>• Verifica que la cuenta conectada en Make.com sea <strong className="text-slate-300">Business/Creator</strong>, no personal</li>
+                                    <li>• Verifica que el toggle del escenario esté en <strong className="text-slate-300">ON</strong> (no solo &quot;Run Once&quot;)</li>
+                                    <li>• Revisa el historial en Make.com: <strong className="text-slate-300">History</strong> → ver si hay errores de conexión</li>
+                                    <li>• Si usa &quot;Run Once&quot;, haz click primero en Make.com y luego en Arq-Medios dentro de 5 segundos</li>
+                                </ul>
                             </div>
                         </div>
 
