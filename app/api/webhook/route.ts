@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const { contentId, webhookUrl } = await request.json()
+  const { contentId, scenarioId, webhookUrl } = await request.json()
 
   // Get content
   const { data: content } = await supabase
@@ -17,6 +17,24 @@ export async function POST(request: Request) {
     .single()
 
   if (!content) return NextResponse.json({ error: 'Content not found' }, { status: 404 })
+
+  // Fetch specific scenario configuration if available
+  let fbPageId = "<<INSERT_PAGE_ID_IN_MAKE>>"
+  let igBusId = "<<INSERT_INSTAGRAM_ID_IN_MAKE>>"
+
+  if (scenarioId) {
+    const { data: scenario } = await supabase
+      .from('scenarios')
+      .select('facebook_page_id, instagram_business_id')
+      .eq('id', scenarioId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (scenario) {
+      if (scenario.facebook_page_id) fbPageId = scenario.facebook_page_id
+      if (scenario.instagram_business_id) igBusId = scenario.instagram_business_id
+    }
+  }
 
   // Determine which webhook to use
   let targetWebhookUrl = webhookUrl
@@ -36,32 +54,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No se encontró un destino (Fábrica) configurado' }, { status: 400 })
   }
 
-  // Format payload for Make.com / n8n
-  // We add AI Metadata for better tracking in the destination
+  // Format payload for Make.com according to Spec "Web to Social Media via AI"
   const socialData = formatForSocial(content)
 
+  // Specification: Flat structure in root for direct mapping in Make.com
   const payload = {
-    meta: {
-      content_id: content.id,
-      type: content.type,
-      title: content.title,
-      platform: content.platform,
-      user_email: user.email,
-    },
-    // Pattern Banana: Observability data
-    ai_metadata: {
-      system: "Ro_Saas Factory - Banana 2",
-      model_mix: content.type === 'carousel' ? 'Groq Llama 3 + Nano Banana Pro' : 'Groq Llama 3',
-    },
-    // Ready to use for Automation
-    automation: {
-      caption: socialData.caption,
-      main_content: socialData.main_content,
-      // We avoid sending internal 'body' because it can contain huge base64 strings
-      media_urls: content.type === 'carousel'
-        ? (content.body as any[]).map(s => s.image_url).filter(url => url && !url.startsWith('data:'))
-        : [],
-    }
+    // Social IDs (Fetched from DB or Placeholders)
+    page_id: fbPageId,
+    instagram_id: igBusId,
+
+    // Post Content
+    title: content.title,
+    caption: socialData.caption,
+    url: `https://arq-medios.com/content/${content.id}`, // Link de referencia
+
+    // Media: Carousel or single image
+    // Spec: images must be a list of objects with { image_url: "..." }
+    images: content.type === 'carousel'
+      ? (content.body as any[])
+        .map(s => ({ image_url: s.image_url }))
+        .filter(img => img.image_url && !img.image_url.startsWith('data:'))
+      : (socialData.image_url ? [{ image_url: socialData.image_url }] : []),
+
+    // Internal Metadata for tracking (Optional, in root)
+    content_id: content.id,
+    type: content.type,
+    platform: content.platform,
+    ai_system: "Ro_Saas Factory - Banana 2"
   }
 
   try {
@@ -118,14 +137,15 @@ export async function POST(request: Request) {
   }
 }
 
-function formatForSocial(content: { type: string; title: string; body: unknown }) {
+function formatForSocial(content: any) {
   if (content.type === 'carousel') {
-    const slides = content.body as Array<{ slide_number: number; title: string; body: string; design_notes: string }>
+    const slides = content.body as Array<{ slide_number: number; title: string; body: string; design_notes: string; image_url?: string }>
     const caption = `${content.title}\n\n${slides.map(s => `📌 Slide ${s.slide_number}: ${s.title}`).join('\n')}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
 
     return {
       caption,
       main_content: slides.map(s => `SLIDE ${s.slide_number}\n${s.title.toUpperCase()}\n\n${s.body}\n\n[Diseño: ${s.design_notes}]`).join('\n\n---\n\n'),
+      image_url: slides.find(s => s.image_url && !s.image_url.startsWith('data:'))?.image_url
     }
   }
 
@@ -133,5 +153,6 @@ function formatForSocial(content: { type: string; title: string; body: unknown }
   return {
     main_content: sections.map(s => `[${s.label}]\n${s.text}`).join('\n\n'),
     caption: `${content.title}\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital`,
+    image_url: undefined
   }
 }

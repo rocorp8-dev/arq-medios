@@ -111,6 +111,7 @@ export default function ContentEditor({ content: initial, initialScenarios, user
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contentId: content.id,
+          scenarioId: selectedScenario.id,
           webhookUrl: selectedScenario.webhook_url // Enviamos la URL específica de la fábrica
         }),
       })

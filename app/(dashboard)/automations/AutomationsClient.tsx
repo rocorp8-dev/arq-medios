@@ -36,6 +36,8 @@ interface Scenario {
     schedule_info: string
     channels: string[]
     webhook_url: string
+    facebook_page_id?: string
+    instagram_business_id?: string
     blueprint_url?: string
     created_at: string
 }
@@ -93,6 +95,8 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
     const [scheduleInfo, setScheduleInfo] = useState('Todos los días a las 10:00 AM')
     const [selectedChannels, setSelectedChannels] = useState<string[]>(['instagram'])
     const [newWebhookUrl, setNewWebhookUrl] = useState('')
+    const [fbPageId, setFbPageId] = useState('')
+    const [igBusId, setIgBusId] = useState('')
 
     const supabase = createClient()
 
@@ -119,15 +123,24 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
         }
     }
 
-    async function handleSaveWebhookUrl(id: string) {
+    async function handleSaveSocialIds(id: string) {
         setSavingWebhook(true)
         const { error } = await supabase
             .from('scenarios')
-            .update({ webhook_url: editWebhookUrl || null })
+            .update({
+                webhook_url: editWebhookUrl || null,
+                facebook_page_id: fbPageId || null,
+                instagram_business_id: igBusId || null
+            })
             .eq('id', id)
 
         if (!error) {
-            setScenarios(scenarios.map(s => s.id === id ? { ...s, webhook_url: editWebhookUrl } : s))
+            setScenarios(scenarios.map(s => s.id === id ? {
+                ...s,
+                webhook_url: editWebhookUrl,
+                facebook_page_id: fbPageId,
+                instagram_business_id: igBusId
+            } : s))
             setEditingWebhook(null)
         }
         setSavingWebhook(false)
@@ -147,7 +160,9 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                     schedule_info: scheduleInfo,
                     channels: selectedChannels,
                     is_active: true,
-                    webhook_url: newWebhookUrl || null
+                    webhook_url: newWebhookUrl || null,
+                    facebook_page_id: fbPageId || null,
+                    instagram_business_id: igBusId || null
                 })
                 .select()
                 .single()
@@ -157,11 +172,14 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
             if (data) {
                 setScenarios([data, ...scenarios])
                 setIsModalOpen(false)
+                // Reset form
                 setNewName('')
                 setTriggerType('webhook')
                 setScheduleInfo('Todos los días a las 10:00 AM')
                 setSelectedChannels(['instagram'])
                 setNewWebhookUrl('')
+                setFbPageId('')
+                setIgBusId('')
             }
         } catch (err: any) {
             console.error('Error creating scenario:', err)
@@ -172,104 +190,343 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
     }
 
     function handleExportBlueprint(scenario: Scenario) {
-        // Make.com-compatible module identifiers per channel
-        const makeModules: Record<string, { module: string; actionName: string }> = {
-            instagram: { module: 'instagram:CreateAPhoto', actionName: 'Create a Photo' },
-            facebook: { module: 'facebook:CreateAPagePost', actionName: 'Create a Page Post' },
-            linkedin: { module: 'linkedin:CreateAShareUpdate', actionName: 'Create a Share Update' }
+        // Make.com-compatible module identifiers and metadata per channel based on professional examples
+        const makeModules: Record<string, any> = {
+            instagram: {
+                module: 'instagram-business:CreatePostPhoto',
+                version: 1,
+                color: '#E1306C',
+                expect: [
+                    { name: 'accountId', type: 'select', label: 'Page', required: true },
+                    { name: 'image_url', type: 'url', label: 'Photo URL', required: true },
+                    { name: 'caption', type: 'text', label: 'Caption' }
+                ]
+            },
+            facebook: {
+                module: 'facebook-pages:CreatePost',
+                version: 6,
+                color: '#1877F2',
+                expect: [
+                    { name: 'page_id', type: 'select', label: 'Page', required: true },
+                    { name: 'message', type: 'text', label: 'Message' },
+                    { name: 'link', type: 'url', label: 'Link' }
+                ]
+            },
+            linkedin: {
+                module: 'linkedin:CreateTextShare',
+                version: 2,
+                color: '#0A66C2',
+                expect: [
+                    { name: 'organization', type: 'select', label: 'Organization', required: true },
+                    { name: 'content', type: 'text', label: 'Content', required: true },
+                    { name: 'visibility', type: 'select', label: 'Visibility', required: true }
+                ]
+            }
         }
 
         // Build the Make.com-compatible flow array
         let moduleId = 1
         const flow: any[] = []
+        const notes: any[] = []
 
-        // Module 1: Custom Webhook trigger
+        // Module 1: Trigger (Direct Webhook - Arq-Medios generates the content)
+        const triggerId = moduleId++
         flow.push({
-            id: moduleId++,
+            id: triggerId,
             module: 'gateway:CustomWebHook',
             version: 1,
-            parameters: {
-                hook: scenario.webhook_url || '<<INSERT_WEBHOOK_ID>>',
-                maxResults: 1
-            },
-            mapper: {},
+            parameters: { hook: scenario.webhook_url || '<<INSERT_WEBHOOK_ID>>', maxResults: 1 },
             metadata: {
-                designer: { x: 0, y: 0 },
-                restore: {},
+                designer: { x: 0, y: 0, name: 'Entrada Arq-Medios' },
+                restore: { parameters: { __IMTHOOK__: { label: 'Arq-Medios Webhook' } } },
                 expect: [
+                    { name: 'page_id', type: 'text', label: 'Facebook Page ID' },
+                    { name: 'instagram_id', type: 'text', label: 'Instagram Business ID' },
+                    { name: 'title', type: 'text' },
+                    { name: 'caption', type: 'text' },
+                    { name: 'url', type: 'url' },
                     {
-                        name: 'meta', type: 'collection', spec: [
-                            { name: 'content_id', type: 'text' },
-                            { name: 'type', type: 'text' },
-                            { name: 'title', type: 'text' },
-                            { name: 'platform', type: 'text' }
-                        ]
-                    },
-                    {
-                        name: 'automation', type: 'collection', spec: [
-                            { name: 'caption', type: 'text' },
-                            { name: 'main_content', type: 'text' },
-                            { name: 'media_urls', type: 'array', spec: { type: 'text' } }
-                        ]
+                        name: 'images',
+                        type: 'array',
+                        spec: {
+                            type: 'collection',
+                            spec: [{ name: 'image_url', type: 'url' }]
+                        }
                     }
                 ]
             }
         })
 
-        // Module 2: Router (if multiple channels)
+        notes.push({
+            moduleIds: [triggerId],
+            content: "<h1>Trigger Arq-Medios</h1><p>Recibe el contenido ya optimizado por la IA de nuestra plataforma.</p>",
+            isFilterNote: false,
+            metadata: { color: '#4B5563' }
+        })
+
+        const webhookId = triggerId
+        const routerStartX = 300
+
+        // Module 4: Router (if multiple channels)
         if (scenario.channels.length > 1) {
+            const routerId = moduleId++
             flow.push({
-                id: moduleId++,
+                id: routerId,
                 module: 'builtin:BasicRouter',
                 version: 1,
                 parameters: {},
                 mapper: null,
                 metadata: {
-                    designer: { x: 300, y: 0 }
+                    designer: { x: routerStartX, y: 0, name: 'Enrutador por Red' }
                 },
-                routes: scenario.channels.map((ch, i) => ({
-                    flow: [{
-                        id: moduleId++,
-                        module: makeModules[ch]?.module || `${ch}:CreatePost`,
-                        version: 1,
-                        parameters: { connection: `<<CONNECT_YOUR_${ch.toUpperCase()}_ACCOUNT>>` },
-                        mapper: {
-                            message: '{{1.automation.caption}}',
-                            url: '{{1.automation.media_urls[]}}',
-                            caption: '{{1.automation.caption}}'
-                        },
-                        metadata: {
-                            designer: { x: 600, y: i * 200 },
-                            expect: [
-                                { name: 'message', type: 'text', label: 'Caption / Texto' },
-                                { name: 'url', type: 'text', label: 'Image URL' }
-                            ]
+                routes: scenario.channels.map((ch, i) => {
+                    if (ch === 'linkedin') {
+                        // LinkedIn Advanced Multi-step Flow (Expert Recommendation)
+                        const iterId = moduleId++
+                        const httpId = moduleId++
+                        const uploadId = moduleId++
+                        const aggId = moduleId++
+                        const createPostId = moduleId++
+
+                        notes.push({
+                            moduleIds: [iterId],
+                            content: "<h1>Iterador de Imágenes</h1><p>Procesa cada URL del carrusel enviado desde Arq-Medios.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#6366F1' }
+                        }, {
+                            moduleIds: [httpId],
+                            content: "<h1>Descargador de Archivos</h1><p>Descarga la imagen para que LinkedIn pueda procesarla como archivo binario.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#6366F1' }
+                        }, {
+                            moduleIds: [uploadId],
+                            content: "<h1>Subida a LinkedIn</h1><p>Sube el archivo y genera un identificador (URN) interno.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#0A66C2' }
+                        }, {
+                            moduleIds: [aggId],
+                            content: "<h1>Agregador de URNs</h1><p>Reúne todos los URNs generados por el iterador en una sola lista para el post final.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#6366F1' }
+                        }, {
+                            moduleIds: [createPostId],
+                            content: "<h1>Publicar Post (Multi-Imagen)</h1><p>Crea el post final en LinkedIn usando el texto y la lista de URNs agregada.</p>",
+                            isFilterNote: false,
+                            metadata: { color: '#0A66C2' }
+                        })
+
+                        return {
+                            flow: [
+                                {
+                                    id: iterId,
+                                    module: 'builtin:BasicIterator',
+                                    version: 1,
+                                    parameters: { array: `{{${webhookId}.images}}` },
+                                    metadata: {
+                                        designer: { x: routerStartX + 300, y: i * 300, name: 'Iterador LinkedIn' }
+                                    }
+                                },
+                                {
+                                    id: httpId,
+                                    module: 'http:ActionGetFile',
+                                    version: 3,
+                                    parameters: { url: `{{${iterId}.image_url}}` },
+                                    metadata: { designer: { x: routerStartX + 600, y: i * 300, name: 'Descargar Imagen' } }
+                                },
+                                {
+                                    id: uploadId,
+                                    module: 'linkedin:UploadImage',
+                                    version: 1,
+                                    parameters: {},
+                                    mapper: { image: `{{${httpId}.data}}` },
+                                    metadata: {
+                                        designer: { x: routerStartX + 900, y: i * 300, name: 'Subir a LinkedIn' },
+                                        restore: { parameters: { __IMTCONN__: { label: 'Conexión LinkedIn' } } }
+                                    }
+                                },
+                                {
+                                    id: aggId,
+                                    module: 'builtin:BasicArrayAggregator',
+                                    version: 1,
+                                    parameters: { feeder: iterId },
+                                    mapper: { urn: `{{${uploadId}.urn}}` },
+                                    metadata: { designer: { x: routerStartX + 1200, y: i * 300, name: 'Agrupar URNs' } }
+                                },
+                                {
+                                    id: createPostId,
+                                    module: 'linkedin:CreatePost',
+                                    version: 1,
+                                    parameters: {},
+                                    mapper: {
+                                        content: `{{${webhookId}.caption}}`,
+                                        media: `{{${aggId}.array}}`,
+                                        organization: `{{${webhookId}.page_id}}`,
+                                        visibility: 'PUBLIC'
+                                    },
+                                    metadata: {
+                                        designer: { x: routerStartX + 1500, y: i * 300, name: 'Post LinkedIn' },
+                                        restore: { parameters: { __IMTCONN__: { label: 'Conexión LinkedIn' } } }
+                                    }
+                                }
+                            ],
+                            label: `LinkedIn (Carrusel)`
                         }
-                    }],
-                    label: `Ruta → ${channelModules[ch]?.name || ch}`
-                }))
+                    }
+
+                    const pubId = moduleId++
+                    const modCfg = makeModules[ch] || { module: `${ch}:CreatePost`, version: 1, color: '#6366F1' }
+
+                    notes.push({
+                        moduleIds: [pubId],
+                        content: `<h1>Publicador ${channelModules[ch]?.name}</h1><p>Este nodo publica el contenido en tu cuenta de ${ch}.</p><p><b>Recordatorio:</b> Debes conectar tu cuenta profesional de ${ch} en el campo 'Connection'.</p>`,
+                        isFilterNote: false,
+                        metadata: { color: modCfg.color }
+                    })
+
+                    return {
+                        flow: [{
+                            id: pubId,
+                            module: modCfg.module,
+                            version: modCfg.version,
+                            parameters: {},
+                            mapper: {
+                                // Mapeo inteligente usando la estructura plana
+                                page_id: `{{${webhookId}.page_id}}`,
+                                message: `{{${webhookId}.caption}}`,
+                                caption: `{{${webhookId}.caption}}`,
+                                content: `{{${webhookId}.caption}}`,
+                                image_url: `{{${webhookId}.images[1].image_url}}`, // First image fallback
+                                link: `{{${webhookId}.url}}`,
+                                url: `{{${webhookId}.url}}`
+                            },
+                            metadata: {
+                                designer: { x: routerStartX + 300, y: i * 200, name: `Publicar en ${ch}` },
+                                restore: {
+                                    parameters: {
+                                        __IMTCONN__: { label: `Conexión Arq-Medios ${ch}` }
+                                    }
+                                },
+                                expect: modCfg.expect
+                            }
+                        }],
+                        label: `Hacia ${channelModules[ch]?.name || ch}`
+                    }
+                })
+            })
+
+            notes.push({
+                moduleIds: [routerId],
+                content: "<h1>Divisor de Canales</h1><p>Este router separa el flujo según las redes sociales seleccionadas en Arq-Medios.</p>",
+                isFilterNote: false,
+                metadata: { color: '#9138FE' }
             })
         } else {
             // Single channel — no router needed
             const ch = scenario.channels[0]
-            flow.push({
-                id: moduleId++,
-                module: makeModules[ch]?.module || `${ch}:CreatePost`,
-                version: 1,
-                parameters: { connection: `<<CONNECT_YOUR_${ch.toUpperCase()}_ACCOUNT>>` },
-                mapper: {
-                    message: '{{1.automation.caption}}',
-                    url: '{{1.automation.media_urls[]}}',
-                    caption: '{{1.automation.caption}}'
-                },
-                metadata: {
-                    designer: { x: 300, y: 0 },
-                    expect: [
-                        { name: 'message', type: 'text', label: 'Caption / Texto' },
-                        { name: 'url', type: 'text', label: 'Image URL' }
-                    ]
-                }
-            })
+            if (ch === 'linkedin') {
+                const iterId = moduleId++
+                const httpId = moduleId++
+                const uploadId = moduleId++
+                const aggId = moduleId++
+                const createPostId = moduleId++
+
+                notes.push({
+                    moduleIds: [iterId],
+                    content: "<h1>Iterador LinkedIn</h1><p>Procesa las múltiples piezas del carrusel.</p>",
+                    isFilterNote: false,
+                    metadata: { color: '#6366F1' }
+                }, {
+                    moduleIds: [createPostId],
+                    content: "<h1>LinkedIn Post</h1><p>Publicación final optimizada para carruseles.</p>",
+                    isFilterNote: false,
+                    metadata: { color: '#0A66C2' }
+                })
+
+                flow.push(
+                    {
+                        id: iterId,
+                        module: 'builtin:BasicIterator',
+                        version: 1,
+                        parameters: { array: `{{${webhookId}.images}}` },
+                        metadata: { designer: { x: routerStartX + 300, y: 0, name: 'Iterador' } }
+                    },
+                    {
+                        id: httpId,
+                        module: 'http:ActionGetFile',
+                        version: 3,
+                        parameters: { url: `{{${iterId}.image_url}}` },
+                        metadata: { designer: { x: routerStartX + 550, y: 0, name: 'Descargar' } }
+                    },
+                    {
+                        id: uploadId,
+                        module: 'linkedin:UploadImage',
+                        version: 1,
+                        parameters: {},
+                        mapper: { image: `{{${httpId}.data}}` },
+                        metadata: {
+                            designer: { x: routerStartX + 800, y: 0, name: 'Subir' },
+                            restore: { parameters: { __IMTCONN__: { label: 'Conexión LinkedIn' } } }
+                        }
+                    },
+                    {
+                        id: aggId,
+                        module: 'builtin:BasicArrayAggregator',
+                        version: 1,
+                        parameters: { feeder: iterId },
+                        mapper: { urn: `{{${uploadId}.urn}}` },
+                        metadata: { designer: { x: routerStartX + 1050, y: 0, name: 'Agrupar' } }
+                    },
+                    {
+                        id: createPostId,
+                        module: 'linkedin:CreatePost',
+                        version: 1,
+                        parameters: {},
+                        mapper: {
+                            content: `{{${webhookId}.caption}}`,
+                            media: `{{${aggId}.array}}`,
+                            organization: `{{${webhookId}.page_id}}`,
+                            visibility: 'PUBLIC'
+                        },
+                        metadata: {
+                            designer: { x: routerStartX + 1300, y: 0, name: 'Post' },
+                            restore: { parameters: { __IMTCONN__: { label: 'Conexión LinkedIn' } } }
+                        }
+                    }
+                )
+            } else {
+                const pubId = moduleId++
+                const modCfg = makeModules[ch] || { module: `${ch}:CreatePost`, version: 1, color: '#6366F1' }
+
+                flow.push({
+                    id: pubId,
+                    module: modCfg.module,
+                    version: modCfg.version,
+                    parameters: {},
+                    mapper: {
+                        message: `{{${webhookId}.caption}}`,
+                        caption: `{{${webhookId}.caption}}`,
+                        content: `{{${webhookId}.caption}}`,
+                        image_url: `{{${webhookId}.images[1].image_url}}`,
+                        url: `{{${webhookId}.url}}`
+                    },
+                    metadata: {
+                        designer: { x: routerStartX + 300, y: 0, name: `Publicar en ${ch}` },
+                        restore: {
+                            parameters: {
+                                __IMTCONN__: { label: `Conexión Arq-Medios ${ch}` }
+                            }
+                        },
+                        expect: modCfg.expect
+                    }
+                })
+
+                notes.push({
+                    moduleIds: [pubId],
+                    content: `<h1>Publicador ${channelModules[ch]?.name}</h1><p>Este nodo publica el contenido en tu cuenta de ${ch}.</p><p><b>Importante:</b> Conecta tu cuenta en el botón 'Add' de este módulo.</p>`,
+                    isFilterNote: false,
+                    metadata: { color: modCfg.color }
+                })
+            }
         }
 
         const blueprint = {
@@ -287,31 +544,21 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                     dataloss: false,
                     dlq: false
                 },
-                designer: { orphans: [] },
+                designer: {
+                    orphans: [],
+                    notes
+                },
                 zone: 'us2.make.com'
             },
-            // Arq-Medios reference (for the user, not Make.com)
             _arq_medios: {
                 exported_at: new Date().toISOString(),
-                version: '4.0',
+                version: '6.0 (PRO)',
                 source: 'Arq-Medios by Ro_Saas Factory',
-                channels: scenario.channels,
-                payload_example: {
-                    meta: { content_id: 'uuid', type: 'carousel', title: 'Mi Post Viral', platform: 'both' },
-                    automation: {
-                        caption: 'Tu caption para redes sociales...',
-                        main_content: 'Contenido principal del post...',
-                        media_urls: ['https://example.com/image1.jpg']
-                    }
-                },
                 setup_instructions: [
                     '1. En Make.com: Create a new scenario',
-                    '2. Click "..." → Import Blueprint → sube este archivo',
-                    '3. En el módulo Webhook: Click "Add" para generar tu URL',
-                    '4. Copia la URL y pégala en Arq-Medios (campo Webhook URL)',
-                    `5. Conecta tu cuenta de ${scenario.channels.map(c => channelModules[c]?.name || c).join(' y ')}`,
-                    '6. Activa el escenario (botón ON)',
-                    '7. Envía contenido desde Arq-Medios con "Enviar a Fábrica"'
+                    '2. Click "..." (menú inferior) → Import Blueprint → Sube este archivo',
+                    '3. Abre el nodo de Webhook y genera tu URL fija',
+                    '4. En los nodos finales de Publicación (FB/IG/LI), conecta tus cuentas profesionales'
                 ]
             }
         }
@@ -324,6 +571,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
         a.click()
         URL.revokeObjectURL(url)
     }
+
 
     async function handleCopyWebhookUrl(scenario: Scenario) {
         if (!scenario.webhook_url) return
@@ -512,7 +760,12 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                         </div>
                                         {!editingWebhook || editingWebhook !== scenario.id ? (
                                             <button
-                                                onClick={() => { setEditingWebhook(scenario.id); setEditWebhookUrl(scenario.webhook_url || '') }}
+                                                onClick={() => {
+                                                    setEditingWebhook(scenario.id);
+                                                    setEditWebhookUrl(scenario.webhook_url || '');
+                                                    setFbPageId(scenario.facebook_page_id || '');
+                                                    setIgBusId(scenario.instagram_business_id || '');
+                                                }}
                                                 className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-400 transition-colors"
                                             >
                                                 <Pencil size={12} />
@@ -522,50 +775,80 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                     </div>
 
                                     {editingWebhook === scenario.id ? (
-                                        <div className="flex gap-2 mt-2">
+                                        <div className="flex flex-col gap-3 mt-2">
                                             <input
                                                 type="url"
                                                 value={editWebhookUrl}
                                                 onChange={(e) => setEditWebhookUrl(e.target.value)}
-                                                placeholder="https://hook.us2.make.com/xxxxxxxxxxxx"
-                                                className="flex-1 bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500/50 outline-none font-mono"
-                                                autoFocus
+                                                placeholder="Webhook URL de Make.com"
+                                                className="w-full bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500/50 outline-none font-mono"
                                             />
-                                            <button
-                                                onClick={() => handleSaveWebhookUrl(scenario.id)}
-                                                disabled={savingWebhook}
-                                                className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
-                                            >
-                                                {savingWebhook ? '...' : 'Guardar'}
-                                            </button>
-                                            <button
-                                                onClick={() => setEditingWebhook(null)}
-                                                className="p-2 text-slate-400 hover:text-white transition"
-                                            >
-                                                <X size={16} />
-                                            </button>
-                                        </div>
-                                    ) : hasWebhook ? (
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <p className="text-xs text-slate-400 truncate font-mono flex-1">{scenario.webhook_url}</p>
-                                            <button
-                                                onClick={() => handleCopyWebhookUrl(scenario)}
-                                                className="p-1.5 text-slate-400 hover:text-white transition-colors"
-                                                title="Copiar URL"
-                                            >
-                                                {copiedId === scenario.id ? <CheckCircle size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                                            </button>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={fbPageId}
+                                                    onChange={(e) => setFbPageId(e.target.value)}
+                                                    placeholder="Facebook Page ID"
+                                                    className="bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-[10px] text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500/50 outline-none font-mono"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={igBusId}
+                                                    onChange={(e) => setIgBusId(e.target.value)}
+                                                    placeholder="Instagram Business ID"
+                                                    className="bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-[10px] text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500/50 outline-none font-mono"
+                                                />
+                                            </div>
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={() => setEditingWebhook(null)}
+                                                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition"
+                                                >
+                                                    Cancelar
+                                                </button>
+                                                <button
+                                                    onClick={() => handleSaveSocialIds(scenario.id)}
+                                                    disabled={savingWebhook}
+                                                    className="px-4 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50"
+                                                >
+                                                    {savingWebhook ? '...' : 'Guardar Cambios'}
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <p className="text-xs text-amber-500/80 mt-1">
-                                            Necesitas agregar tu URL de webhook de Make.com para poder enviar contenido.
-                                            <button
-                                                onClick={() => setGuideScenario(scenario)}
-                                                className="ml-1 text-indigo-400 hover:text-indigo-300 underline"
-                                            >
-                                                Ver guía de configuración
-                                            </button>
-                                        </p>
+                                        <div className="space-y-3">
+                                            {/* Webhook Display */}
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <p className="text-xs text-slate-400 truncate font-mono flex-1">
+                                                    {scenario.webhook_url || 'Sin URL de webhook'}
+                                                </p>
+                                                {scenario.webhook_url && (
+                                                    <button
+                                                        onClick={() => handleCopyWebhookUrl(scenario)}
+                                                        className="p-1.5 text-slate-400 hover:text-white transition-colors"
+                                                        title="Copiar URL"
+                                                    >
+                                                        {copiedId === scenario.id ? <CheckCircle size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Social IDs Display */}
+                                            <div className="flex items-center gap-4 pt-2 border-t border-white/5">
+                                                <div className="flex items-center gap-2">
+                                                    <Facebook size={12} className="text-blue-500/50" />
+                                                    <span className="text-[10px] font-mono text-slate-500">
+                                                        FB: {scenario.facebook_page_id || '---'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Instagram size={12} className="text-pink-500/50" />
+                                                    <span className="text-[10px] font-mono text-slate-500">
+                                                        IG: {scenario.instagram_business_id || '---'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -686,6 +969,33 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                     />
                                 </div>
                             )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-medium text-slate-400 block mb-2 flex items-center gap-2">
+                                        <Facebook size={14} className="text-blue-400" /> Facebook Page ID
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={fbPageId}
+                                        onChange={(e) => setFbPageId(e.target.value)}
+                                        placeholder="Ej: 104529348271"
+                                        className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl px-4 py-3 text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-mono text-xs"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-slate-400 block mb-2 flex items-center gap-2">
+                                        <Instagram size={14} className="text-pink-400" /> Instagram ID
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={igBusId}
+                                        onChange={(e) => setIgBusId(e.target.value)}
+                                        placeholder="Ej: 1784140123456"
+                                        className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl px-4 py-3 text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-mono text-xs"
+                                    />
+                                </div>
+                            </div>
 
                             <div>
                                 <label className="text-sm font-medium text-slate-400 block mb-2">
