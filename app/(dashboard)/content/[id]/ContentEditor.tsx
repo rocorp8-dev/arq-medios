@@ -69,6 +69,7 @@ export default function ContentEditor({ content: initial, initialScenarios, user
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [useInSlideUrl, setUseInSlideUrl] = useState<string | null>(null)
   const [showSlideSelector, setShowSlideSelector] = useState(false)
+  const [selectedSlideIndex, setSelectedSlideIndex] = useState<number | null>(null)
 
   // Automation Factories State
   const [scenarios] = useState<Scenario[]>(initialScenarios)
@@ -852,21 +853,27 @@ export default function ContentEditor({ content: initial, initialScenarios, user
               <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
                 <Layers size={18} className="text-indigo-500" /> ¿En qué slide poner la imagen?
               </h3>
-              <p className="text-xs text-slate-500 mb-4">La imagen marcada con <span className="text-emerald-400 font-semibold">📤 Se publica</span> es la que Make.com va a subir. Asigna tu imagen ahí.</p>
+              <p className="text-xs text-slate-500 mb-4">Selecciona un slide y confirma con <span className="text-indigo-400 font-semibold">OK</span>.</p>
 
-              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
                 {slides.map((slide, i) => {
                   const hasValid = !!slide.image_url && !slide.image_url.startsWith('data:')
                   const willPublish = i === firstPublishable
-                  const isRecommended = i === 0 || (!hasValid && i < firstPublishable)
+                  const isSelected = selectedSlideIndex === i
                   return (
                     <button
                       key={i}
-                      onClick={() => handleReplaceSlide(useInSlideUrl!, i)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition text-left group ${willPublish ? 'border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10' : 'border-[#2a2a2a] hover:border-indigo-500/50 hover:bg-indigo-500/5'}`}
+                      onClick={() => setSelectedSlideIndex(i)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition text-left ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-500/15 ring-1 ring-indigo-500/40'
+                          : willPublish
+                          ? 'border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10'
+                          : 'border-[#2a2a2a] hover:border-slate-600 hover:bg-white/5'
+                      }`}
                     >
                       {/* Thumbnail */}
-                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0 relative">
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#1a1a1a] flex-shrink-0">
                         {slide.image_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={slide.image_url} alt="" className="w-full h-full object-cover" />
@@ -876,28 +883,38 @@ export default function ContentEditor({ content: initial, initialScenarios, user
                       </div>
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-200 truncate">{slide.title}</span>
-                        </div>
+                        <span className="text-xs font-bold text-slate-200 truncate block">{slide.title}</span>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[10px] text-slate-600">Slide {slide.slide_number}</span>
                           {willPublish && <span className="text-[10px] font-bold text-emerald-400">📤 Se publica aquí</span>}
-                          {!hasValid && !willPublish && <span className="text-[10px] text-amber-500">Sin imagen válida</span>}
+                          {!hasValid && !willPublish && <span className="text-[10px] text-amber-500">Sin imagen</span>}
                         </div>
                       </div>
-                      {/* Arrow */}
-                      <span className="text-slate-600 group-hover:text-indigo-400 transition text-lg">→</span>
+                      {/* Selection indicator */}
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition ${isSelected ? 'border-indigo-500 bg-indigo-500' : 'border-slate-600'}`}>
+                        {isSelected && <Check size={11} className="text-white" />}
+                      </div>
                     </button>
                   )
                 })}
               </div>
 
-              <button
-                onClick={() => { setShowSlideSelector(false); setUseInSlideUrl(null) }}
-                className="w-full mt-4 py-3 text-sm font-bold text-slate-500 hover:text-white transition"
-              >
-                Cancelar
-              </button>
+              {/* Action buttons */}
+              <div className="flex gap-3 mt-5">
+                <button
+                  onClick={() => { setShowSlideSelector(false); setUseInSlideUrl(null); setSelectedSlideIndex(null) }}
+                  className="flex-1 py-3 text-sm font-bold text-slate-500 hover:text-white border border-[#2a2a2a] hover:border-slate-600 rounded-xl transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  disabled={selectedSlideIndex === null}
+                  onClick={() => { if (selectedSlideIndex !== null) { handleReplaceSlide(useInSlideUrl!, selectedSlideIndex); setSelectedSlideIndex(null) } }}
+                  className="flex-1 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition flex items-center justify-center gap-2"
+                >
+                  <Check size={15} /> OK — Asignar
+                </button>
+              </div>
             </div>
           </div>
         )
