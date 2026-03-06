@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Plus, Search, Pencil, Trash2, X, Sparkles } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, X, Sparkles, Newspaper, RefreshCw, ExternalLink, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import type { Topic } from '@/types/database'
@@ -31,6 +31,11 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [newsArticles, setNewsArticles] = useState<any[]>([])
+  const [newsError, setNewsError] = useState<string | null>(null)
+  const [loadingNews, setLoadingNews] = useState(false)
+  const [selectedArticle, setSelectedArticle] = useState<any | null>(null)
+  const [showNews, setShowNews] = useState(false)
   const supabase = createClient()
   const router = useRouter()
 
@@ -65,19 +70,48 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
     setTopics(ts => ts.filter(t => t.id !== id))
   }
 
+  async function handleFetchNews(topic: Topic) {
+    setLoadingNews(true)
+    setShowNews(true)
+    setSelectedArticle(null)
+    setNewsError(null)
+    try {
+      const res = await fetch(`/api/news?q=${encodeURIComponent(topic.title)}`)
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setNewsArticles(data)
+      } else if (data.error) {
+        setNewsError(data.error)
+        setNewsArticles([])
+      } else {
+        setNewsArticles([])
+      }
+    } catch (err: any) {
+      setNewsError(err.message || 'Error de conexión')
+      setNewsArticles([])
+    }
+    setLoadingNews(false)
+  }
+
   async function handleGenerate(topic: Topic, type: 'carousel' | 'reel') {
     setGenerating(true)
     try {
+      const newsContext = selectedArticle
+        ? { title: selectedArticle.title, description: selectedArticle.description }
+        : undefined
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topicId: topic.id, topicTitle: topic.title, topicDescription: topic.description, type }),
+        body: JSON.stringify({ topicId: topic.id, topicTitle: topic.title, topicDescription: topic.description, type, newsContext }),
       })
       const data = await res.json()
       if (data.id) {
         await supabase.from('topics').update({ status: 'used' }).eq('id', topic.id)
         setTopics(ts => ts.map(t => t.id === topic.id ? { ...t, status: 'used' as const } : t))
         setShowGenerate(null)
+        setSelectedArticle(null)
+        setNewsArticles([])
+        setShowNews(false)
         router.push(`/content/${data.id}`)
       }
     } catch {
@@ -197,13 +231,83 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
 
       {showGenerate && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#111] rounded-xl border border-[#2a2a2a] p-6 w-full max-w-sm shadow-2xl">
+          <div className="bg-[#111] rounded-xl border border-[#2a2a2a] p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-100">Generar Contenido</h2>
-              <button onClick={() => setShowGenerate(null)} className="text-slate-500 hover:text-slate-300"><X size={20} /></button>
+              <button onClick={() => { setShowGenerate(null); setSelectedArticle(null); setNewsArticles([]); setShowNews(false) }} className="text-slate-500 hover:text-slate-300"><X size={20} /></button>
             </div>
             <p className="text-sm text-slate-400 mb-1">Topic:</p>
-            <p className="text-sm font-medium text-slate-200 mb-6">{showGenerate.title}</p>
+            <p className="text-sm font-medium text-slate-200 mb-4">{showGenerate.title}</p>
+
+            {/* News button */}
+            <button
+              onClick={() => handleFetchNews(showGenerate)}
+              disabled={loadingNews}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-amber-400 text-sm font-medium transition disabled:opacity-50"
+            >
+              {loadingNews ? <RefreshCw size={14} className="animate-spin" /> : <Newspaper size={14} />}
+              {loadingNews ? 'Buscando noticias...' : '✨ Inspirarme con Noticias del día'}
+            </button>
+
+            {/* News panel */}
+            {showNews && (
+              <div className="mb-4 space-y-2">
+                {loadingNews && (
+                  <div className="text-center py-4 text-slate-500 text-sm">Buscando noticias relevantes...</div>
+                )}
+                {!loadingNews && newsError && (
+                  <div className="py-3 px-3 text-red-400 text-xs bg-red-500/5 rounded-lg border border-red-500/20">
+                    <span className="font-bold">Error GNews:</span> {newsError}
+                    {newsError.includes('429') || newsError.includes('rate') ? ' — Límite diario alcanzado (10 req/día). Intenta mañana.' : ''}
+                  </div>
+                )}
+                {!loadingNews && !newsError && newsArticles.length === 0 && (
+                  <div className="text-center py-3 text-slate-500 text-sm bg-[#0a0a0a] rounded-lg border border-[#2a2a2a]">
+                    No se encontraron noticias recientes para este tema.
+                  </div>
+                )}
+                {!loadingNews && newsArticles.map((article, i) => {
+                  const isSelected = selectedArticle?.url === article.url
+                  const hoursAgo = Math.round((Date.now() - new Date(article.publishedAt).getTime()) / 3600000)
+                  const isTrending = hoursAgo <= 12
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedArticle(isSelected ? null : article)}
+                      className={`w-full text-left p-3 rounded-lg border transition ${isSelected ? 'border-amber-500 bg-amber-500/10' : 'border-[#2a2a2a] hover:border-slate-600 hover:bg-white/5'}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {isTrending && <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded">🔥 Tendencia</span>}
+                            <span className="text-[10px] text-slate-500">{article.source} · {hoursAgo}h</span>
+                          </div>
+                          <p className="text-xs font-medium text-slate-200 line-clamp-2">{article.title}</p>
+                          {article.description && <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">{article.description}</p>}
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {article.url && (
+                            <a href={article.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="p-1 text-slate-600 hover:text-slate-400">
+                              <ExternalLink size={12} />
+                            </a>
+                          )}
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-amber-500 bg-amber-500' : 'border-slate-600'}`}>
+                            {isSelected && <Check size={10} className="text-white" />}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+                {selectedArticle && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400">
+                    <Check size={12} /> Noticia seleccionada — el contenido se basará en esta noticia
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Generate buttons */}
             <div className="space-y-3">
               <button onClick={() => handleGenerate(showGenerate, 'carousel')} disabled={generating}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-[#2a2a2a] hover:border-purple-500/30 hover:bg-purple-500/5 transition disabled:opacity-50">
@@ -212,7 +316,7 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-medium text-slate-200">Carrusel Viral</p>
-                  <p className="text-xs text-slate-500">10 slides con estructura probada</p>
+                  <p className="text-xs text-slate-500">{selectedArticle ? 'Basado en la noticia seleccionada' : '10 slides con estructura probada'}</p>
                 </div>
               </button>
               <button onClick={() => handleGenerate(showGenerate, 'reel')} disabled={generating}
@@ -222,12 +326,14 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-medium text-slate-200">Guion de Reel</p>
-                  <p className="text-xs text-slate-500">Estructura "El Problema Invisible"</p>
+                  <p className="text-xs text-slate-500">{selectedArticle ? 'Basado en la noticia seleccionada' : 'Estructura "El Problema Invisible"'}</p>
                 </div>
               </button>
             </div>
             {generating && (
-              <p className="text-center text-sm text-indigo-400 mt-4 animate-pulse">Generando con Groq AI...</p>
+              <p className="text-center text-sm text-indigo-400 mt-4 animate-pulse">
+                {selectedArticle ? '🗞️ Generando contenido desde la noticia...' : 'Generando con Groq AI...'}
+              </p>
             )}
           </div>
         </div>

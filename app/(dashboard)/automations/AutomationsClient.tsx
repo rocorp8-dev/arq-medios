@@ -38,6 +38,7 @@ interface Scenario {
     webhook_url: string
     facebook_page_id?: string
     instagram_business_id?: string
+    access_token?: string
     blueprint_url?: string
     created_at: string
 }
@@ -97,6 +98,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
     const [newWebhookUrl, setNewWebhookUrl] = useState('')
     const [fbPageId, setFbPageId] = useState('')
     const [igBusId, setIgBusId] = useState('')
+    const [accessToken, setAccessToken] = useState('')
 
     const supabase = createClient()
 
@@ -130,14 +132,15 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
             .update({
                 webhook_url: editWebhookUrl || null,
                 facebook_page_id: fbPageId || null,
-                instagram_business_id: igBusId || null
+                instagram_business_id: igBusId || null,
+                access_token: accessToken || null
             })
             .eq('id', id)
 
         if (error) {
             console.error('Save error:', error)
             if (error.message?.includes('column') || error.code === 'PGRST204' || error.code === '42703') {
-                alert('⚠️ Error: Las columnas facebook_page_id e instagram_business_id no existen en Supabase.\n\nVe a Supabase → SQL Editor y ejecuta:\n\nALTER TABLE public.scenarios\n  ADD COLUMN IF NOT EXISTS facebook_page_id TEXT,\n  ADD COLUMN IF NOT EXISTS instagram_business_id TEXT;')
+                alert('⚠️ Error: Las columnas no existen en Supabase.\n\nVe a Supabase → SQL Editor y ejecuta:\n\nALTER TABLE public.scenarios\n  ADD COLUMN IF NOT EXISTS facebook_page_id TEXT,\n  ADD COLUMN IF NOT EXISTS instagram_business_id TEXT,\n  ADD COLUMN IF NOT EXISTS access_token TEXT;')
             } else {
                 alert('Error al guardar: ' + error.message)
             }
@@ -149,7 +152,8 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
             ...s,
             webhook_url: editWebhookUrl,
             facebook_page_id: fbPageId,
-            instagram_business_id: igBusId
+            instagram_business_id: igBusId,
+            access_token: accessToken
         } : s))
         setEditingWebhook(null)
         setSavingWebhook(false)
@@ -1114,6 +1118,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                                     setEditWebhookUrl(scenario.webhook_url || '');
                                                     setFbPageId(scenario.facebook_page_id || '');
                                                     setIgBusId(scenario.instagram_business_id || '');
+                                                    setAccessToken(scenario.access_token || '');
                                                 }}
                                                 className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-400 transition-colors"
                                             >
@@ -1148,6 +1153,13 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                                     className="bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-[10px] text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500/50 outline-none font-mono"
                                                 />
                                             </div>
+                                            <input
+                                                type="password"
+                                                value={accessToken}
+                                                onChange={(e) => setAccessToken(e.target.value)}
+                                                placeholder="Access Token de Meta (para carruseles IG)"
+                                                className="bg-[#111] border border-[#333] rounded-lg px-3 py-2 text-[10px] text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-amber-500/50 outline-none font-mono w-full"
+                                            />
                                             <div className="flex justify-end gap-2">
                                                 <button
                                                     onClick={() => setEditingWebhook(null)}
@@ -1183,7 +1195,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                             </div>
 
                                             {/* Social IDs Display */}
-                                            <div className="flex items-center gap-4 pt-2 border-t border-white/5">
+                                            <div className="flex items-center gap-4 pt-2 border-t border-white/5 flex-wrap">
                                                 <div className="flex items-center gap-2">
                                                     <Facebook size={12} className="text-blue-500/50" />
                                                     <span className="text-[10px] font-mono text-slate-500">
@@ -1194,6 +1206,11 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                                     <Instagram size={12} className="text-pink-500/50" />
                                                     <span className="text-[10px] font-mono text-slate-500">
                                                         IG: {scenario.instagram_business_id || '---'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-mono text-slate-500">
+                                                        Token: {scenario.access_token ? <span className="text-emerald-500">✓ configurado</span> : '---'}
                                                     </span>
                                                 </div>
                                             </div>

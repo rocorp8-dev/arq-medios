@@ -11,7 +11,7 @@ Slides 8-9 (Revelación): Un aprendizaje crucial o resumen visual inesperado.
 Slide 10 (CTA): Llamada a la acción clara: "Comenta GUÍA" o "Guarda este post".
 
 Responde SOLO con un JSON array de 10 objetos con este formato:
-[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"Descripción visual detallada para generación de imagen por IA (estilo profesional, minimalista, colores de marca)"}]
+[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Act as a Midjourney expert prompt engineer. Write a hyper-detailed photorealistic prompt for this slide specifying: 1) Main subject in action related to the slide topic, 2) Detailed environment and background, 3) Lighting style (e.g. cinematic lighting, volumetric light, golden hour, harsh shadows), 4) Camera and lens type (e.g. shot on 35mm lens, DSLR, f/1.8 bokeh, wide angle), 5) Visual style (e.g. ultra-realistic photography, 8k resolution, RAW photo, editorial style, hyper-detailed). NEVER include text, words, letters or numbers inside the image."}]
 
 El body debe ser conciso (máximo 20 palabras por slide). Las design_notes deben incluir indicaciones de color, tipografía y elementos visuales.`
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const { topicId, topicTitle, topicDescription, type } = await request.json()
+  const { topicId, topicTitle, topicDescription, type, newsContext } = await request.json()
 
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
@@ -57,7 +57,10 @@ export async function POST(request: Request) {
 
   // Call Groq API (OpenAI-compatible)
   const systemPrompt = type === 'carousel' ? CAROUSEL_PROMPT : REEL_PROMPT
-  const userPrompt = `Tema: ${topicTitle}${topicDescription ? `\nDescripción: ${topicDescription}` : ''}`
+  const newsBlock = newsContext?.title
+    ? `\n\nNOTICIA RECIENTE DEL DÍA (basa el contenido ESTRICTAMENTE en esto):\nTitular: ${newsContext.title}\nResumen: ${newsContext.description || ''}\nÁngulo requerido: Explica cómo esta noticia impacta directamente al cliente del nicho.`
+    : ''
+  const userPrompt = `Tema: ${topicTitle}${topicDescription ? `\nDescripción: ${topicDescription}` : ''}${newsBlock}`
 
   try {
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Webhook, Lightbulb, FileText, BarChart3, Menu, X, Rocket, Sparkles, Megaphone } from 'lucide-react'
+import { Webhook, Lightbulb, FileText, BarChart3, Menu, X, Rocket, Sparkles, Megaphone, TrendingUp } from 'lucide-react'
 import clsx from 'clsx'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Topics', icon: Lightbulb, href: '/topics' },
   { label: 'Content', icon: FileText, href: '/content' },
   { label: 'Campaigns', icon: Megaphone, href: '/campaigns' },
+  { label: 'Tendencias', icon: TrendingUp, href: '/trends' },
   { label: 'Automatización', icon: Sparkles, href: '/automations' },
 ]
 

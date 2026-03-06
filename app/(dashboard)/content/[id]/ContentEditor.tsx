@@ -80,7 +80,7 @@ export default function ContentEditor({ content: initial, initialScenarios, user
     if (initial.type === 'carousel') {
       const slides = (Array.isArray(initial.body) ? initial.body : []) as CarouselSlide[]
       const subtitle = slides[0]?.title || ''
-      return `${initial.title}\n\n${subtitle}\n\n💾 Guarda este post\n📩 Comparte con alguien que lo necesite\n\n#contentmarketing #socialmedia #marketingdigital`
+      return `${initial.title}\n\n${subtitle}\n\nAsegura tu patrimonio con expertos. ✨\n\n👇 Visita mi sitio web oficial:\nhttps://dulcesalas-acesor.vercel.app/\n\n📌 Guarda este post si estás planeando tu inversión este 2026.\n✈️ Envíaselo a alguien que busque el refugio perfecto en Baja California.\n\n#RealEstateMexico #InversionSegura #BajaCalifornia #TerrenosDeLujo`
     }
     return `${initial.title}\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital`
   }, [initial])
@@ -231,18 +231,27 @@ export default function ContentEditor({ content: initial, initialScenarios, user
   async function handleReplaceSlide(url: string, index: number) {
     if (content.type !== 'carousel') return
     const slides = [...body] as CarouselSlide[]
+    if (!slides[index]) return
     slides[index] = { ...slides[index], image_url: url }
+
+    // Update UI immediately — close modal, show preview, update state
     setBody(slides)
-
-    // Auto-save
-    setSaving(true)
-    const { data } = await supabase.from('content').update({ body: slides }).eq('id', content.id).select().single()
-    if (data) setContent(data as Content)
-    setSaving(false)
-
     setShowSlideSelector(false)
     setUseInSlideUrl(null)
-    setTab('preview') // Switch to preview to see the change
+    setSelectedSlideIndex(null)
+    setTab('preview')
+
+    // Save to DB in background
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.from('content').update({ body: slides }).eq('id', content.id).select().single()
+      if (error) throw error
+      if (data) setContent(data as Content)
+    } catch (e) {
+      console.error('Error al guardar imagen en slide:', e)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleGenerateVideo() {
@@ -461,14 +470,14 @@ export default function ContentEditor({ content: initial, initialScenarios, user
           {/* Carousel slides preview */}
           {(() => {
             const slides = body as CarouselSlide[]
-            const firstPublishableIndex = slides.findIndex(s => s.image_url && !s.image_url.startsWith('data:'))
+            const firstPublishableIndex = slides.findIndex(s => !!s.image_url)
             return (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                   {slides.map((slide, i) => {
                     const label = slideLabels[slide.slide_number] ?? 'Contenido'
                     const gradient = slideColors[label] ?? 'from-slate-600 to-slate-700'
-                    const hasValidImage = !!slide.image_url && !slide.image_url.startsWith('data:')
+                    const hasValidImage = !!slide.image_url
                     const isDataUrl = !!slide.image_url?.startsWith('data:')
                     const willPublish = i === firstPublishableIndex
                     return (
@@ -476,6 +485,10 @@ export default function ContentEditor({ content: initial, initialScenarios, user
                         <div className={`aspect-[4/5] rounded-2xl ${slide.image_url ? '' : 'bg-gradient-to-br ' + gradient} p-4 flex flex-col justify-between overflow-hidden shadow-lg relative ${willPublish ? 'ring-2 ring-emerald-500' : ''}`}>
                           {slide.image_url && !isDataUrl && (
                             <NextImage src={slide.image_url} alt={slide.title} fill className="object-cover" sizes="(max-width: 768px) 50vw, 20vw" />
+                          )}
+                          {isDataUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={slide.image_url!} alt={slide.title} className="absolute inset-0 w-full h-full object-cover" />
                           )}
                           {hasValidImage && <div className="absolute inset-0 bg-black/40" />}
 
@@ -685,7 +698,12 @@ export default function ContentEditor({ content: initial, initialScenarios, user
                 {slide.image_url ? (
                   <>
                     <div className="h-14 w-14 rounded-lg bg-[#222] overflow-hidden border border-[#333] shadow-inner relative">
-                      <NextImage src={slide.image_url} alt="Min" fill className="object-cover" sizes="56px" />
+                      {slide.image_url.startsWith('data:') ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={slide.image_url} alt="Min" className="w-full h-full object-cover" />
+                      ) : (
+                        <NextImage src={slide.image_url} alt="Min" fill className="object-cover" sizes="56px" />
+                      )}
                     </div>
                     <button
                       onClick={() => handleRegenerateImage(i, slide.image_prompt || '')}
@@ -832,13 +850,12 @@ export default function ContentEditor({ content: initial, initialScenarios, user
             <X size={24} />
           </button>
           <div className="relative w-full h-full flex items-center justify-center">
-            <NextImage
-              src={lightboxUrl}
-              alt="Detail"
-              fill
-              className="object-contain"
-              priority
-            />
+            {lightboxUrl.startsWith('data:') ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={lightboxUrl} alt="Detail" className="max-w-full max-h-full object-contain" />
+            ) : (
+              <NextImage src={lightboxUrl} alt="Detail" fill className="object-contain" priority />
+            )}
           </div>
         </div>
       )}
@@ -846,7 +863,7 @@ export default function ContentEditor({ content: initial, initialScenarios, user
       {/* Slide Selector Modal */}
       {showSlideSelector && (() => {
         const slides = body as CarouselSlide[]
-        const firstPublishable = slides.findIndex(s => s.image_url && !s.image_url.startsWith('data:'))
+        const firstPublishable = slides.findIndex(s => !!s.image_url)
         return (
           <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in zoom-in duration-200">
             <div className="bg-[#111] border border-[#2a2a2a] w-full max-w-lg rounded-3xl p-6 shadow-2xl">
@@ -942,6 +959,9 @@ function MediaCard({ url, selected, type, favorite, onToggle, onFavorite, onDele
     >
       {type === 'video' ? (
         <video src={url} className="w-full h-full object-cover" muted loop onMouseOver={e => e.currentTarget.play()} onMouseOut={e => e.currentTarget.pause()} />
+      ) : url.startsWith('data:') ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" className="w-full h-full object-cover" />
       ) : (
         <NextImage src={url} alt="" fill className={type === 'upload' ? 'object-contain p-2' : 'object-cover'} sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw" />
       )}
