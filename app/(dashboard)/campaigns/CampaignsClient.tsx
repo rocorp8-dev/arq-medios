@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { format, nextMonday } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle, Send } from 'lucide-react'
+import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle, Send, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Campaign } from '@/types/database'
 
@@ -174,6 +174,62 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
       console.error('Generation error:', err)
       setGenState('error')
     }
+  }
+
+  async function handleDownloadCampaign(campaign: Campaign) {
+    const { data: items } = await supabase
+      .from('content')
+      .select('id, title, scheduled_at, body')
+      .eq('campaign_id', campaign.id)
+      .order('scheduled_at', { ascending: true })
+
+    if (!items || items.length === 0) return
+
+    const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    const sep = '─'.repeat(50)
+
+    const lines: string[] = [
+      `CAMPAÑA: ${campaign.name}`,
+      campaign.topic_keyword ? `Tema: ${campaign.topic_keyword}` : '',
+      campaign.start_date && campaign.end_date
+        ? `Semana: ${format(new Date(campaign.start_date + 'T12:00:00'), 'dd MMM', { locale: es })} — ${format(new Date(campaign.end_date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}`
+        : '',
+      '═'.repeat(50),
+      '',
+    ].filter(Boolean)
+
+    items.forEach((item, i) => {
+      const date = item.scheduled_at ? new Date(item.scheduled_at) : null
+      const dayName = date ? DIAS[date.getDay() === 0 ? 6 : date.getDay() - 1] : `Día ${i + 1}`
+      const dateStr = date ? format(date, 'dd MMM', { locale: es }) : ''
+
+      lines.push(`DÍA ${i + 1} — ${dayName.toUpperCase()}${dateStr ? ` ${dateStr}` : ''}`)
+      lines.push(`Título: ${item.title}`)
+      lines.push('')
+
+      const slides = Array.isArray(item.body) ? item.body : []
+      if (slides.length === 0) {
+        lines.push('  (Sin contenido generado)')
+      } else {
+        slides.forEach((slide: { slide_number?: number; title?: string; body?: string }, si: number) => {
+          lines.push(`  SLIDE ${slide.slide_number ?? si + 1}`)
+          if (slide.title) lines.push(`  ${slide.title}`)
+          if (slide.body)  lines.push(`  ${slide.body}`)
+          lines.push('')
+        })
+      }
+
+      lines.push(sep)
+      lines.push('')
+    })
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${campaign.name.replace(/[^a-z0-9áéíóúñ\s]/gi, '').trim()}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleSendCampaign(campaign: Campaign) {
@@ -386,15 +442,24 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
                                   {days.filter(d => d.generated).length}/{days.length} posts listos
                                 </p>
                               )}
-                              <button
-                                onClick={e => { e.stopPropagation(); handleSendCampaign(c) }}
-                                disabled={isSending || !!sendingId}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                              >
-                                {isSending
-                                  ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Enviando...</>
-                                  : <><Send size={12} /> Enviar semana completa</>}
-                              </button>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleDownloadCampaign(c) }}
+                                  disabled={isSending}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] border border-[#333] text-slate-300 rounded-lg hover:bg-[#222] transition disabled:opacity-50"
+                                >
+                                  <Download size={12} /> Descargar
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleSendCampaign(c) }}
+                                  disabled={isSending || !!sendingId}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {isSending
+                                    ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Enviando...</>
+                                    : <><Send size={12} /> Enviar semana</>}
+                                </button>
+                              </div>
                             </div>
                           )
                         })()}
