@@ -212,9 +212,15 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
         // Based on working production blueprint. Exact module names, field names
         // and metadata structure that Make.com requires to import without errors.
         if (hasIG && hasFB) {
+            // ── BLUEPRINT CARRUSEL MAESTRO ──────────────────────────────────────
+            // Confirmado en producción (usuario "Carrusel Dulce" + "Redes Sociales Ds"):
+            //   IG: CreateCarouselPhoto con files:"{{1.images}}" + restore.expect.files.mode:"edit" → carrusel completo ✓
+            //   FB: HTTP:ActionGetFile → UploadPhoto → foto limpia sin tarjeta de web ✓
+            // KEY: files:{mode:"edit"} activa el modo fórmula en Make.com para el campo files
             const blueprint = {
                 name: `Arq-Medios: ${scenario.name}`,
                 flow: [
+                    // Módulo 1: Webhook
                     {
                         id: 1,
                         module: 'gateway:CustomWebHook',
@@ -231,9 +237,25 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                             parameters: [
                                 { name: 'hook', type: 'hook:gateway-webhook', label: 'Webhook', required: true },
                                 { name: 'maxResults', type: 'number', label: 'Maximum number of results' }
+                            ],
+                            expect: [
+                                { name: 'caption', type: 'text', label: 'Caption del post' },
+                                {
+                                    name: 'images',
+                                    type: 'array',
+                                    label: 'Imágenes del carrusel',
+                                    spec: {
+                                        type: 'collection',
+                                        spec: [
+                                            { name: 'image_url', type: 'url', label: 'URL de la imagen' },
+                                            { name: 'media_type', type: 'text', label: 'Tipo (IMAGE)' }
+                                        ]
+                                    }
+                                }
                             ]
                         }
                     },
+                    // Módulo 2: Router — separa Instagram y Facebook
                     {
                         id: 2,
                         module: 'builtin:BasicRouter',
@@ -241,32 +263,35 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                         parameters: {},
                         mapper: null,
                         metadata: {
-                            designer: { x: 275, y: -1, name: 'Enrutador por Red' }
+                            designer: { x: 350, y: 0, name: 'Divisor IG / FB' }
                         },
                         routes: [
+                            // ── Ruta A: Instagram Carrusel completo ──
                             {
                                 flow: [
                                     {
                                         id: 3,
-                                        module: 'instagram-business:CreatePostPhoto',
+                                        module: 'instagram-business:CreateCarouselPhoto',
                                         version: 1,
                                         parameters: {},
                                         mapper: {
-                                            caption: '{{1.caption}}',
                                             accountId: igId,
-                                            image_url: '{{1.images[1].image_url}}'
+                                            caption: '{{1.caption}}',
+                                            files: '{{1.images}}'
                                         },
                                         metadata: {
-                                            designer: { x: 600, y: -132, name: 'Instagram' },
+                                            designer: { x: 700, y: -200, name: 'Instagram Carrusel' },
                                             restore: {
                                                 expect: {
-                                                    accountId: { mode: 'chose', label: igId },
-                                                    user_tags: { mode: 'chose' }
+                                                    // mode:'edit' CRÍTICO → activa modo fórmula para el campo files
+                                                    // Sin esto Make.com usa modo estático y el array no funciona
+                                                    files: { mode: 'edit' },
+                                                    accountId: { mode: 'chose', label: igId }
                                                 },
                                                 parameters: {
                                                     __IMTCONN__: {
                                                         data: { scoped: 'true', connection: 'facebook' },
-                                                        label: 'Selecciona tu conexión Instagram Business'
+                                                        label: 'Conexión Instagram Business'
                                                     }
                                                 }
                                             },
@@ -274,29 +299,20 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                                 { name: '__IMTCONN__', type: 'account:facebook', label: 'Connection', required: true }
                                             ],
                                             expect: [
-                                                { name: 'accountId', type: 'select', label: 'Page', required: true },
-                                                { name: 'image_url', type: 'url', label: 'Photo URL', required: true },
-                                                { name: 'caption', type: 'text', label: 'Caption' },
-                                                {
-                                                    name: 'user_tags',
-                                                    type: 'array',
-                                                    label: 'User Tags',
-                                                    spec: [
-                                                        { name: 'username', type: 'text', label: 'Username', required: true, validate: { pattern: '^(?!@)' } },
-                                                        { name: 'x', type: 'number', label: 'X position', required: true, validate: { max: 1, min: 0 } },
-                                                        { name: 'y', type: 'number', label: 'Y position', required: true, validate: { max: 1, min: 0 } }
-                                                    ]
-                                                },
-                                                { name: 'location_id', type: 'text', label: 'Location ID' }
+                                                { name: 'accountId', type: 'select', label: 'Instagram Business Account', required: true },
+                                                { name: 'files', type: 'array', label: 'Files', required: true },
+                                                { name: 'caption', type: 'text', label: 'Caption' }
                                             ]
                                         }
                                     }
                                 ]
                             },
+                            // ── Ruta B: Facebook foto limpia (HTTP download → UploadPhoto) ──
+                            // Confirmado: crea post con imagen real, sin tarjeta de vista previa web
                             {
                                 flow: [
                                     {
-                                        id: 5,
+                                        id: 4,
                                         module: 'http:ActionGetFile',
                                         version: 3,
                                         parameters: { handleErrors: true },
@@ -307,10 +323,10 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                             shareCookies: false
                                         },
                                         metadata: {
-                                            designer: { x: 594, y: 182, name: 'Descargar Imagen' },
+                                            designer: { x: 700, y: 130, name: 'Descargar Imagen FB' },
                                             restore: {},
                                             parameters: [
-                                                { name: 'handleErrors', type: 'boolean', label: 'Evaluate all states as errors (except for 2xx and 3xx )', required: true }
+                                                { name: 'handleErrors', type: 'boolean', label: 'Evaluate all states as errors (except for 2xx and 3xx)', required: true }
                                             ],
                                             expect: [
                                                 { name: 'url', type: 'url', label: 'URL', required: true },
@@ -321,27 +337,26 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                         }
                                     },
                                     {
-                                        id: 4,
+                                        id: 5,
                                         module: 'facebook-pages:UploadPhoto',
                                         version: 6,
                                         parameters: {},
                                         mapper: {
-                                            data: '{{5.data}}',
+                                            data: '{{4.data}}',
                                             message: '{{1.caption}}',
                                             page_id: fbId,
-                                            fileName: '{{5.fileName}}'
+                                            fileName: '{{4.fileName}}'
                                         },
                                         metadata: {
-                                            designer: { x: 900, y: 200, name: 'Facebook Foto' },
+                                            designer: { x: 1050, y: 130, name: 'Facebook Foto' },
                                             restore: {
                                                 expect: {
-                                                    page_id: { mode: 'chose', label: fbId },
-                                                    album_id: { mode: 'chose' }
+                                                    page_id: { mode: 'chose', label: fbId }
                                                 },
                                                 parameters: {
                                                     __IMTCONN__: {
                                                         data: { scoped: 'true', connection: 'facebook' },
-                                                        label: 'Selecciona tu conexión Facebook Pages'
+                                                        label: 'Conexión Facebook Pages'
                                                     }
                                                 }
                                             },
@@ -352,8 +367,7 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                                                 { name: 'page_id', type: 'select', label: 'Page', required: true },
                                                 { name: 'fileName', type: 'filename', label: 'File name', required: true },
                                                 { name: 'data', type: 'buffer', label: 'Data', required: true },
-                                                { name: 'message', type: 'text', label: 'Photo caption' },
-                                                { name: 'album_id', type: 'select', label: 'Album' }
+                                                { name: 'message', type: 'text', label: 'Photo caption' }
                                             ]
                                         }
                                     }
@@ -369,12 +383,10 @@ export default function AutomationsClient({ initialScenarios, userId }: Props) {
                     designer: {
                         orphans: [],
                         notes: [
-                            { content: '<h1>Trigger Arq-Medios</h1><p>Recibe el contenido ya optimizado por la IA de nuestra plataforma.</p>', metadata: { color: '#4B5563' }, moduleIds: [1], isFilterNote: false },
-                            { content: '<h1>Publicador Instagram Business</h1><p>Este nodo publica el contenido en tu cuenta de instagram.</p><p><b>Acción requerida:</b> Haz click en este módulo → campo "Connection" → Add → autoriza tu cuenta Instagram for Business.</p>', metadata: { color: '#E1306C' }, moduleIds: [3], isFilterNote: false },
-                            { content: '<h1>Publicador Facebook Pages</h1><p>Este nodo publica el contenido en tu cuenta de facebook.</p><p><b>Acción requerida:</b> Haz click en este módulo → campo "Connection" → Add → autoriza tu cuenta Facebook Pages.</p>', metadata: { color: '#1877F2' }, moduleIds: [4], isFilterNote: false },
-                            { content: '<h1>Descargar Imagen Real</h1><p>Convierte la URL en archivo binario para que Facebook lo reciba como FOTO, no como link. Así evitas la vista previa de tu web.</p>', metadata: { color: '#00BFFF' }, moduleIds: [5], isFilterNote: false },
-                            { content: '<h1>Subir Foto a Facebook</h1><p>Publica la imagen directamente como foto con caption. Resultado: post limpio, sin recuadro de web.</p>', metadata: { color: '#1877F2' }, moduleIds: [4], isFilterNote: false },
-                            { content: '<h1>Divisor de Canales</h1><p>Este router separa el flujo según las redes sociales seleccionadas en Arq-Medios.</p>', metadata: { color: '#9138FE' }, moduleIds: [2], isFilterNote: false }
+                            { content: '<h1>Entrada Arq-Medios</h1><p>Recibe el payload con <b>caption</b> e <b>images[]</b>. Conecta tu webhook aquí.</p>', metadata: { color: '#4B5563' }, moduleIds: [1], isFilterNote: false },
+                            { content: '<h1>Instagram Carrusel ✓</h1><p><b>2 pasos:</b><br/>1. Connection → Add → Instagram Business<br/>2. Account → selecciona tu cuenta IG<br/>Las fotos y caption llegan automáticamente.</p>', metadata: { color: '#E1306C' }, moduleIds: [3], isFilterNote: false },
+                            { content: '<h1>Descarga Imagen Facebook</h1><p>Convierte la URL en binario para que Facebook reciba la foto real (no un link).</p>', metadata: { color: '#00BFFF' }, moduleIds: [4], isFilterNote: false },
+                            { content: '<h1>Facebook Foto Limpia ✓</h1><p><b>2 pasos:</b><br/>1. Connection → Add → Facebook Pages<br/>2. Page → selecciona tu página<br/>Post limpio: imagen real + caption, sin tarjeta web.</p>', metadata: { color: '#1877F2' }, moduleIds: [5], isFilterNote: false }
                         ]
                     },
                     zone: 'us2.make.com',

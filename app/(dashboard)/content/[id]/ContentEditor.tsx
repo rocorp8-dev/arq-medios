@@ -80,11 +80,15 @@ export default function ContentEditor({ content: initial, initialScenarios, user
     if (initial.type === 'carousel') {
       const slides = (Array.isArray(initial.body) ? initial.body : []) as CarouselSlide[]
       const subtitle = slides[0]?.title || ''
-      return `${initial.title}\n\n${subtitle}\n\nAsegura tu patrimonio con expertos. ✨\n\n👇 Visita mi sitio web oficial:\nhttps://dulcesalas-acesor.vercel.app/\n\n📌 Guarda este post si estás planeando tu inversión este 2026.\n✈️ Envíaselo a alguien que busque el refugio perfecto en Baja California.\n\n#RealEstateMexico #InversionSegura #BajaCalifornia #TerrenosDeLujo`
+      return `${initial.title}\n\n${subtitle}\n\n📌 Guarda este post\n\n📩 Comparte con alguien que lo necesite\n\n\n#contentmarketing #socialmedia #marketingdigital`
     }
     return `${initial.title}\n\n💬 ¿Te identificas? Comenta abajo\n📩 Comparte con alguien que lo necesite\n\n#reels #contentcreator #marketingdigital`
   }, [initial])
   const [customCaption, setCustomCaption] = useState(defaultCaption)
+  const [captionConfirmed, setCaptionConfirmed] = useState(false)
+
+  const isDefaultCaption = customCaption === defaultCaption
+  const hasPendingCaptionChange = !isDefaultCaption && !captionConfirmed
 
   const supabase = createClient()
 
@@ -551,24 +555,60 @@ export default function ContentEditor({ content: initial, initialScenarios, user
           })()}
 
           {/* Caption editable */}
-          <div className="bg-[#111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-xl p-6">
+          <div className={`bg-[#111]/80 backdrop-blur-md border rounded-xl p-6 transition-colors ${
+            captionConfirmed && !isDefaultCaption
+              ? 'border-emerald-500/40'
+              : hasPendingCaptionChange
+                ? 'border-amber-500/40'
+                : 'border-[#2a2a2a]'
+          }`}>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-slate-300">Caption para publicación:</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold text-slate-300">Caption para publicación</h4>
+                {isDefaultCaption && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-[#333]">Genérico</span>
+                )}
+                {captionConfirmed && !isDefaultCaption && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">✓ Personalizado</span>
+                )}
+                {hasPendingCaptionChange && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Cambio sin confirmar</span>
+                )}
+              </div>
               <button
-                onClick={() => setCustomCaption(defaultCaption)}
+                onClick={() => { setCustomCaption(defaultCaption); setCaptionConfirmed(false) }}
                 className="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors"
               >
-                Restaurar original
+                Restaurar genérico
               </button>
             </div>
             <textarea
               value={customCaption}
-              onChange={e => setCustomCaption(e.target.value)}
+              onChange={e => { setCustomCaption(e.target.value); setCaptionConfirmed(false) }}
               rows={8}
-              className="w-full bg-[#0a0a0a] border border-[#222] focus:border-indigo-500/50 rounded-lg p-4 text-sm text-slate-300 leading-relaxed resize-y outline-none transition-colors font-mono"
+              className={`w-full bg-[#0a0a0a] border rounded-lg p-4 text-sm text-slate-300 leading-relaxed resize-y outline-none transition-colors font-mono ${
+                captionConfirmed && !isDefaultCaption
+                  ? 'border-emerald-500/30 focus:border-emerald-500/50'
+                  : hasPendingCaptionChange
+                    ? 'border-amber-500/30 focus:border-amber-500/50'
+                    : 'border-[#222] focus:border-indigo-500/50'
+              }`}
               placeholder="Escribe tu caption personalizado aquí..."
             />
-            <p className="text-[11px] text-slate-600 mt-1">{customCaption.length} caracteres · Edita antes de enviar a la Fábrica</p>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-[11px] text-slate-600">{customCaption.length} caracteres</p>
+              {hasPendingCaptionChange && (
+                <button
+                  onClick={() => setCaptionConfirmed(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[11px] font-semibold rounded-lg border border-amber-500/20 transition-colors"
+                >
+                  ✓ Confirmar caption para este post
+                </button>
+              )}
+              {captionConfirmed && !isDefaultCaption && (
+                <p className="text-[11px] text-emerald-500">✓ Caption personalizado listo para publicar</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -649,24 +689,60 @@ export default function ContentEditor({ content: initial, initialScenarios, user
               })}
 
               {/* Caption editable */}
-              <div className="bg-[#111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-xl p-4 mt-4">
+              <div className={`bg-[#111]/80 backdrop-blur-md border rounded-xl p-4 mt-4 transition-colors ${
+                captionConfirmed && !isDefaultCaption
+                  ? 'border-emerald-500/40'
+                  : hasPendingCaptionChange
+                    ? 'border-amber-500/40'
+                    : 'border-[#2a2a2a]'
+              }`}>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-semibold text-slate-300">Caption para publicación:</h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-300">Caption para publicación</h4>
+                    {isDefaultCaption && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-[#333]">Genérico</span>
+                    )}
+                    {captionConfirmed && !isDefaultCaption && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">✓ Personalizado</span>
+                    )}
+                    {hasPendingCaptionChange && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Cambio sin confirmar</span>
+                    )}
+                  </div>
                   <button
-                    onClick={() => setCustomCaption(defaultCaption)}
+                    onClick={() => { setCustomCaption(defaultCaption); setCaptionConfirmed(false) }}
                     className="text-[11px] text-slate-500 hover:text-indigo-400 transition-colors"
                   >
-                    Restaurar original
+                    Restaurar genérico
                   </button>
                 </div>
                 <textarea
                   value={customCaption}
-                  onChange={e => setCustomCaption(e.target.value)}
+                  onChange={e => { setCustomCaption(e.target.value); setCaptionConfirmed(false) }}
                   rows={7}
-                  className="w-full bg-[#0a0a0a] border border-[#222] focus:border-indigo-500/50 rounded-lg p-3 text-xs text-slate-300 leading-relaxed resize-y outline-none transition-colors font-mono"
+                  className={`w-full bg-[#0a0a0a] border rounded-lg p-3 text-xs text-slate-300 leading-relaxed resize-y outline-none transition-colors font-mono ${
+                    captionConfirmed && !isDefaultCaption
+                      ? 'border-emerald-500/30 focus:border-emerald-500/50'
+                      : hasPendingCaptionChange
+                        ? 'border-amber-500/30 focus:border-amber-500/50'
+                        : 'border-[#222] focus:border-indigo-500/50'
+                  }`}
                   placeholder="Escribe tu caption personalizado aquí..."
                 />
-                <p className="text-[11px] text-slate-600 mt-1">{customCaption.length} caracteres</p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[11px] text-slate-600">{customCaption.length} caracteres</p>
+                  {hasPendingCaptionChange && (
+                    <button
+                      onClick={() => setCaptionConfirmed(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[11px] font-semibold rounded-lg border border-amber-500/20 transition-colors"
+                    >
+                      ✓ Confirmar caption para este post
+                    </button>
+                  )}
+                  {captionConfirmed && !isDefaultCaption && (
+                    <p className="text-[11px] text-emerald-500">✓ Caption personalizado listo para publicar</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

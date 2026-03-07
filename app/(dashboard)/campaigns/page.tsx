@@ -6,11 +6,16 @@ export default async function CampaignsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data: campaigns } = await supabase
-    .from('campaigns')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+  const [{ data: campaigns }, { data: scenarios }] = await Promise.all([
+    supabase.from('campaigns').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+    supabase.from('scenarios').select('id, name').eq('user_id', user.id).order('created_at', { ascending: false }),
+  ])
 
-  return <CampaignsClient initialCampaigns={campaigns ?? []} userId={user.id} />
+  return (
+    <CampaignsClient
+      initialCampaigns={campaigns ?? []}
+      scenarios={scenarios ?? []}
+      userId={user.id}
+    />
+  )
 }

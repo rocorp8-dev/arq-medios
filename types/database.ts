@@ -63,6 +63,8 @@ export interface Campaign {
   status: 'active' | 'paused' | 'completed'
   start_date: string | null
   end_date: string | null
+  topic_keyword: string | null
+  scenario_id: string | null
   created_at: string
 }
 
@@ -99,7 +101,7 @@ export interface AICost {
   id: string
   user_id: string
   model_used: string
-  type: 'text' | 'image' | 'video'
+  type: 'text' | 'image' | 'video' | 'carousel_full' | 'reel_script' | 'single_image' | 'image_combination'
   duration_seconds: number | null
   total_cost_usd: number
   metadata: Record<string, unknown> | null
