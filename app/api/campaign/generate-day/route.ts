@@ -2,18 +2,16 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
 const CAROUSEL_PROMPT = `Eres un experto en marketing digital y contenido viral para redes sociales.
-Genera un carrusel viral de 10 slides siguiendo EXACTAMENTE esta estructura:
+Genera un carrusel de EXACTAMENTE 3 slides de alto impacto:
 
-Slide 1 (Gancho): Pregunta intrigante o promesa fuerte. Tipografía grande y color llamativo.
-Slides 2-3 (Problema): Presenta un problema real y relatable con errores comunes.
-Slides 4-7 (Contenido Útil): Solución en pasos prácticos. Máximo 20 palabras por slide. Usa listas.
-Slides 8-9 (Revelación): Un aprendizaje crucial o resumen visual inesperado.
-Slide 10 (CTA): Llamada a la acción clara: "Comenta GUÍA" o "Guarda este post".
+Slide 1 (Gancho): Titular poderoso — una promesa, dato sorprendente o pregunta que detenga el scroll. Máximo 8 palabras. Muy visual.
+Slide 2 (Valor): El mensaje principal condensado en su forma más directa y útil. Lista de 3 puntos o una revelación clave. Máximo 30 palabras.
+Slide 3 (CTA): Llamada a la acción clara y específica. Ej: "Guarda esto", "Comenta SÍ si te pasó", "Escríbeme HOY". Máximo 12 palabras.
 
-Responde SOLO con un JSON array de 10 objetos con este formato:
-[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Act as a Midjourney expert prompt engineer. Write a hyper-detailed photorealistic prompt for this slide specifying: 1) Main subject in action related to the slide topic, 2) Detailed environment and background, 3) Lighting style (e.g. cinematic lighting, volumetric light, golden hour, harsh shadows), 4) Camera and lens type (e.g. shot on 35mm lens, DSLR, f/1.8 bokeh, wide angle), 5) Visual style (e.g. ultra-realistic photography, 8k resolution, RAW photo, editorial style, hyper-detailed). NEVER include text, words, letters or numbers inside the image."}]
+Responde SOLO con un JSON array de 3 objetos, sin texto adicional:
+[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Hyper-detailed photorealistic prompt: main subject in action related to the topic, cinematic lighting, shot on 35mm lens f/1.8 bokeh, ultra-realistic photography 8k RAW. NEVER include text, words or numbers in the image."}]
 
-El body debe ser conciso (máximo 20 palabras por slide). Las design_notes deben incluir indicaciones de color, tipografía y elementos visuales.`
+El body debe ser conciso y directo. Las design_notes deben indicar color dominante, tipografía y composición visual.`
 
 async function generateImage(prompt: string, apiKey: string) {
   try {
