@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { format, nextMonday } from 'date-fns'
 import { es } from 'date-fns/locale'
+import JSZip from 'jszip'
 import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle, Send, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Campaign } from '@/types/database'
@@ -176,60 +177,93 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
     }
   }
 
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
   async function handleDownloadCampaign(campaign: Campaign) {
-    const { data: items } = await supabase
-      .from('content')
-      .select('id, title, scheduled_at, body')
-      .eq('campaign_id', campaign.id)
-      .order('scheduled_at', { ascending: true })
+    if (downloadingId) return
+    setDownloadingId(campaign.id)
 
-    if (!items || items.length === 0) return
+    try {
+      const { data: items } = await supabase
+        .from('content')
+        .select('id, title, scheduled_at, body')
+        .eq('campaign_id', campaign.id)
+        .order('scheduled_at', { ascending: true })
 
-    const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-    const sep = '─'.repeat(50)
+      if (!items || items.length === 0) { setDownloadingId(null); return }
 
-    const lines: string[] = [
-      `CAMPAÑA: ${campaign.name}`,
-      campaign.topic_keyword ? `Tema: ${campaign.topic_keyword}` : '',
-      campaign.start_date && campaign.end_date
-        ? `Semana: ${format(new Date(campaign.start_date + 'T12:00:00'), 'dd MMM', { locale: es })} — ${format(new Date(campaign.end_date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}`
-        : '',
-      '═'.repeat(50),
-      '',
-    ].filter(Boolean)
+      const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+      const sep = '─'.repeat(50)
+      const zip = new JSZip()
+      const folderName = campaign.name.replace(/[^a-z0-9áéíóúñ\s]/gi, '').trim()
 
-    items.forEach((item, i) => {
-      const date = item.scheduled_at ? new Date(item.scheduled_at) : null
-      const dayName = date ? DIAS[date.getDay() === 0 ? 6 : date.getDay() - 1] : `Día ${i + 1}`
-      const dateStr = date ? format(date, 'dd MMM', { locale: es }) : ''
+      // Build texto completo
+      const lines: string[] = [
+        `CAMPAÑA: ${campaign.name}`,
+        campaign.topic_keyword ? `Tema: ${campaign.topic_keyword}` : '',
+        campaign.start_date && campaign.end_date
+          ? `Semana: ${format(new Date(campaign.start_date + 'T12:00:00'), 'dd MMM', { locale: es })} — ${format(new Date(campaign.end_date + 'T12:00:00'), 'dd MMM yyyy', { locale: es })}`
+          : '',
+        '═'.repeat(50),
+        '',
+      ].filter(Boolean)
 
-      lines.push(`DÍA ${i + 1} — ${dayName.toUpperCase()}${dateStr ? ` ${dateStr}` : ''}`)
-      lines.push(`Título: ${item.title}`)
-      lines.push('')
+      // Descargar imágenes en paralelo por día
+      await Promise.all(items.map(async (item, i) => {
+        const date = item.scheduled_at ? new Date(item.scheduled_at) : null
+        const dayName = date ? DIAS[date.getDay() === 0 ? 6 : date.getDay() - 1] : `Dia${i + 1}`
+        const dateStr = date ? format(date, 'dd MMM', { locale: es }) : ''
+        const dayFolder = `${folderName}/Dia${i + 1}-${dayName}`
+        const slides = Array.isArray(item.body) ? item.body : []
 
-      const slides = Array.isArray(item.body) ? item.body : []
-      if (slides.length === 0) {
-        lines.push('  (Sin contenido generado)')
-      } else {
-        slides.forEach((slide: { slide_number?: number; title?: string; body?: string }, si: number) => {
-          lines.push(`  SLIDE ${slide.slide_number ?? si + 1}`)
-          if (slide.title) lines.push(`  ${slide.title}`)
-          if (slide.body)  lines.push(`  ${slide.body}`)
-          lines.push('')
-        })
-      }
+        // Texto del día
+        lines.push(`DÍA ${i + 1} — ${dayName.toUpperCase()}${dateStr ? ` ${dateStr}` : ''}`)
+        lines.push(`Título: ${item.title}`)
+        lines.push('')
 
-      lines.push(sep)
-      lines.push('')
-    })
+        if (slides.length === 0) {
+          lines.push('  (Sin contenido generado)')
+        } else {
+          slides.forEach((slide: { slide_number?: number; title?: string; body?: string; image_url?: string }, si: number) => {
+            lines.push(`  SLIDE ${slide.slide_number ?? si + 1}`)
+            if (slide.title) lines.push(`  ${slide.title}`)
+            if (slide.body)  lines.push(`  ${slide.body}`)
+            lines.push('')
+          })
+        }
+        lines.push(sep)
+        lines.push('')
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${campaign.name.replace(/[^a-z0-9áéíóúñ\s]/gi, '').trim()}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
+        // Imágenes del día
+        await Promise.all(slides.map(async (slide: { image_url?: string; slide_number?: number }, si: number) => {
+          const imgUrl = slide.image_url
+          if (!imgUrl || imgUrl.startsWith('data:')) return
+          try {
+            const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(imgUrl)}`)
+            if (!res.ok) return
+            const blob = await res.blob()
+            const ext = blob.type.includes('png') ? 'png' : 'jpg'
+            zip.file(`${dayFolder}/slide-${slide.slide_number ?? si + 1}.${ext}`, blob)
+          } catch { /* imagen no disponible */ }
+        }))
+      }))
+
+      // Agregar texto al zip
+      zip.file(`${folderName}/contenido.txt`, lines.join('\n'))
+
+      // Generar y descargar zip
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${folderName}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download error:', err)
+    }
+
+    setDownloadingId(null)
   }
 
   async function handleSendCampaign(campaign: Campaign) {
@@ -445,10 +479,12 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
                               <div className="flex items-center gap-2 shrink-0">
                                 <button
                                   onClick={e => { e.stopPropagation(); handleDownloadCampaign(c) }}
-                                  disabled={isSending}
+                                  disabled={isSending || !!downloadingId}
                                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] border border-[#333] text-slate-300 rounded-lg hover:bg-[#222] transition disabled:opacity-50"
                                 >
-                                  <Download size={12} /> Descargar
+                                  {downloadingId === c.id
+                                    ? <><div className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full animate-spin" /> Descargando...</>
+                                    : <><Download size={12} /> Descargar .zip</>}
                                 </button>
                                 <button
                                   onClick={e => { e.stopPropagation(); handleSendCampaign(c) }}
