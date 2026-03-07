@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { format, nextMonday } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle } from 'lucide-react'
+import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Campaign } from '@/types/database'
 
@@ -56,6 +56,10 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
     startDate: defaultStartDate(),
     scenarioId: scenarios[0]?.id ?? '',
   })
+
+  // Send campaign state
+  const [sendingId, setSendingId] = useState<string | null>(null)
+  const [sendResults, setSendResults] = useState<Record<string, Array<'pending' | 'sending' | 'ok' | 'error'>>>({})
 
   // Generation progress
   const [genState, setGenState] = useState<'idle' | 'planning' | 'generating' | 'done' | 'error'>('idle')
@@ -172,6 +176,51 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
     }
   }
 
+  async function handleSendCampaign(campaign: Campaign) {
+    const days = campaignDays[campaign.id]
+    if (!days || days.length === 0 || sendingId) return
+
+    setSendingId(campaign.id)
+    setSendResults(prev => ({
+      ...prev,
+      [campaign.id]: days.map(() => 'pending' as const),
+    }))
+
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i]
+
+      setSendResults(prev => ({
+        ...prev,
+        [campaign.id]: prev[campaign.id].map((r, idx) => idx === i ? 'sending' : r),
+      }))
+
+      try {
+        const res = await fetch('/api/webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentId: day.contentId,
+            scenarioId: campaign.scenario_id || null,
+            webhookUrl: null,
+            customCaption: null,
+          }),
+        })
+
+        setSendResults(prev => ({
+          ...prev,
+          [campaign.id]: prev[campaign.id].map((r, idx) => idx === i ? (res.ok ? 'ok' : 'error') : r),
+        }))
+      } catch {
+        setSendResults(prev => ({
+          ...prev,
+          [campaign.id]: prev[campaign.id].map((r, idx) => idx === i ? 'error' : r),
+        }))
+      }
+    }
+
+    setSendingId(null)
+  }
+
   async function toggleExpand(campaign: Campaign) {
     if (expandedId === campaign.id) {
       setExpandedId(null)
@@ -273,30 +322,82 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
                     {isLoading ? (
                       <div className="py-6 text-center text-slate-500 text-sm">Cargando días...</div>
                     ) : days && days.length > 0 ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                        {days.map((day, idx) => (
-                          <a
-                            key={day.contentId}
-                            href={`/content/${day.contentId}`}
-                            className="group flex flex-col gap-1.5 p-3 rounded-lg bg-[#0d0d0d] border border-[#222] hover:border-indigo-500/40 hover:bg-[#151520] transition cursor-pointer"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-semibold text-slate-500">{DAYS_ES[idx % 7]}</span>
-                              {day.generated
-                                ? <CheckCircle2 size={13} className="text-emerald-500" />
-                                : <Clock size={13} className="text-slate-600" />}
+                      <div className="space-y-3">
+                        {/* 7-day grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                          {days.map((day, idx) => {
+                            const result = sendResults[c.id]?.[idx]
+                            return (
+                              <a
+                                key={day.contentId}
+                                href={`/content/${day.contentId}`}
+                                className="group flex flex-col gap-1.5 p-3 rounded-lg bg-[#0d0d0d] border border-[#222] hover:border-indigo-500/40 hover:bg-[#151520] transition cursor-pointer"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-slate-500">{DAYS_ES[idx % 7]}</span>
+                                  {result === 'ok' ? (
+                                    <CheckCircle2 size={13} className="text-emerald-400" />
+                                  ) : result === 'sending' ? (
+                                    <div className="w-3 h-3 border border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                                  ) : result === 'error' ? (
+                                    <AlertCircle size={13} className="text-red-400" />
+                                  ) : day.generated ? (
+                                    <CheckCircle2 size={13} className="text-emerald-500/50" />
+                                  ) : (
+                                    <Clock size={13} className="text-slate-600" />
+                                  )}
+                                </div>
+                                {day.date && (
+                                  <span className="text-xs text-slate-600">
+                                    {format(new Date(day.date), 'dd MMM', { locale: es })}
+                                  </span>
+                                )}
+                                <p className="text-xs text-slate-300 font-medium line-clamp-2 leading-tight">{day.title}</p>
+                                <div className="flex items-center gap-1 text-indigo-400 opacity-0 group-hover:opacity-100 transition text-xs mt-auto">
+                                  <ExternalLink size={11} /> Editar
+                                </div>
+                              </a>
+                            )
+                          })}
+                        </div>
+
+                        {/* Send bar */}
+                        {(() => {
+                          const results = sendResults[c.id]
+                          const isSending = sendingId === c.id
+                          const sentCount = results?.filter(r => r === 'ok').length ?? 0
+                          const isDone = results && !isSending && results.every(r => r === 'ok' || r === 'error')
+                          const hasError = results?.some(r => r === 'error')
+
+                          return (
+                            <div className="flex items-center justify-between pt-1">
+                              {isDone ? (
+                                <p className={`text-xs font-medium ${hasError ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                  {hasError
+                                    ? `⚠️ ${sentCount}/${days.length} enviados — algunos fallaron`
+                                    : `✅ ${sentCount} posts enviados a Make.com`}
+                                </p>
+                              ) : isSending ? (
+                                <p className="text-xs text-slate-400">
+                                  Enviando día {(results?.filter(r => r === 'ok' || r === 'sending').length ?? 0)}/{days.length}...
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-600">
+                                  {days.filter(d => d.generated).length}/{days.length} posts listos
+                                </p>
+                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); handleSendCampaign(c) }}
+                                disabled={isSending || !!sendingId}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                              >
+                                {isSending
+                                  ? <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Enviando...</>
+                                  : <><Send size={12} /> Enviar semana completa</>}
+                              </button>
                             </div>
-                            {day.date && (
-                              <span className="text-xs text-slate-600">
-                                {format(new Date(day.date), 'dd MMM', { locale: es })}
-                              </span>
-                            )}
-                            <p className="text-xs text-slate-300 font-medium line-clamp-2 leading-tight">{day.title}</p>
-                            <div className="flex items-center gap-1 text-indigo-400 opacity-0 group-hover:opacity-100 transition text-xs mt-auto">
-                              <ExternalLink size={11} /> Editar
-                            </div>
-                          </a>
-                        ))}
+                          )
+                        })()}
                       </div>
                     ) : (
                       <p className="text-slate-500 text-sm text-center py-4">No hay posts en esta campaña</p>
