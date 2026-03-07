@@ -6,9 +6,9 @@ import { TrendingUp, Newspaper, RefreshCw, ExternalLink, Sparkles, X } from 'luc
 
 interface TopicSeed { id: string; title: string; category: string | null }
 interface NewsArticle { title: string; description: string; url: string; source: string; publishedAt: string }
-interface Props { initialTopics: TopicSeed[]; userId: string }
+interface Props { initialTopics: TopicSeed[]; campaignKeywords: string[]; userId: string }
 
-export default function TrendsClient({ initialTopics, userId }: Props) {
+export default function TrendsClient({ initialTopics, campaignKeywords, userId }: Props) {
   const router = useRouter()
   const [articles, setArticles] = useState<NewsArticle[]>([])
   const [newsError, setNewsError] = useState<string | null>(null)
@@ -17,11 +17,18 @@ export default function TrendsClient({ initialTopics, userId }: Props) {
   const [generating, setGenerating] = useState<string | null>(null) // articleUrl being generated
   const [generateModal, setGenerateModal] = useState<NewsArticle | null>(null)
 
-  // Derive unique keywords from topic titles + categories
-  const keywords = Array.from(new Set([
+  // Keywords de topics (categorías + títulos)
+  const topicKeywords = Array.from(new Set([
     ...initialTopics.map(t => t.category).filter(Boolean) as string[],
     ...initialTopics.map(t => t.title).slice(0, 5),
-  ])).slice(0, 12)
+  ])).slice(0, 10)
+
+  // Keywords únicas de campañas (sin duplicar con topics)
+  const uniqueCampaignKeywords = Array.from(new Set(campaignKeywords))
+    .filter(kw => !topicKeywords.includes(kw))
+    .slice(0, 8)
+
+  const keywords = topicKeywords
 
   async function fetchNews(keyword: string) {
     setActiveKeyword(keyword)
@@ -87,24 +94,48 @@ export default function TrendsClient({ initialTopics, userId }: Props) {
       </div>
 
       {/* Keyword pills */}
-      {keywords.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tus keywords (de tus topics)</p>
-          <div className="flex flex-wrap gap-2">
-            {keywords.map((kw, i) => (
-              <button
-                key={i}
-                onClick={() => fetchNews(kw)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
-                  activeKeyword === kw
-                    ? 'bg-amber-500 text-black'
-                    : 'bg-[#1a1a1a] text-slate-400 border border-[#2a2a2a] hover:border-amber-500/40 hover:text-amber-400'
-                }`}
-              >
-                {kw}
-              </button>
-            ))}
-          </div>
+      {keywords.length > 0 || uniqueCampaignKeywords.length > 0 ? (
+        <div className="space-y-4">
+          {keywords.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tus keywords (de tus topics)</p>
+              <div className="flex flex-wrap gap-2">
+                {keywords.map((kw, i) => (
+                  <button
+                    key={i}
+                    onClick={() => fetchNews(kw)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                      activeKeyword === kw
+                        ? 'bg-amber-500 text-black'
+                        : 'bg-[#1a1a1a] text-slate-400 border border-[#2a2a2a] hover:border-amber-500/40 hover:text-amber-400'
+                    }`}
+                  >
+                    {kw}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {uniqueCampaignKeywords.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">De tus campañas</p>
+              <div className="flex flex-wrap gap-2">
+                {uniqueCampaignKeywords.map((kw, i) => (
+                  <button
+                    key={i}
+                    onClick={() => fetchNews(kw)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                      activeKeyword === kw
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:border-indigo-500/50 hover:bg-indigo-500/20'
+                    }`}
+                  >
+                    {kw}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-8 text-center">

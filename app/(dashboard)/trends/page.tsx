@@ -9,11 +9,12 @@ export default async function TrendsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: topics } = await supabase
-    .from('topics')
-    .select('id, title, category')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+  const [{ data: topics }, { data: campaigns }] = await Promise.all([
+    supabase.from('topics').select('id, title, category').eq('user_id', user.id).order('created_at', { ascending: false }),
+    supabase.from('campaigns').select('topic_keyword').eq('user_id', user.id).not('topic_keyword', 'is', null),
+  ])
 
-  return <TrendsClient initialTopics={topics || []} userId={user.id} />
+  const campaignKeywords = (campaigns ?? []).map(c => c.topic_keyword as string).filter(Boolean)
+
+  return <TrendsClient initialTopics={topics || []} campaignKeywords={campaignKeywords} userId={user.id} />
 }
