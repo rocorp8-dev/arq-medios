@@ -2,20 +2,27 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { TrendingUp, Newspaper, RefreshCw, ExternalLink, Sparkles, X } from 'lucide-react'
+import { TrendingUp, Newspaper, RefreshCw, ExternalLink, Sparkles, X, Plus, CheckCircle2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 interface TopicSeed { id: string; title: string; category: string | null }
 interface NewsArticle { title: string; description: string; url: string; source: string; publishedAt: string }
+interface TopicSuggestion { title: string; description: string; category: string }
 interface Props { initialTopics: TopicSeed[]; campaignKeywords: string[]; userId: string }
 
 export default function TrendsClient({ initialTopics, campaignKeywords, userId }: Props) {
   const router = useRouter()
+  const supabase = createClient()
   const [articles, setArticles] = useState<NewsArticle[]>([])
   const [newsError, setNewsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [activeKeyword, setActiveKeyword] = useState<string | null>(null)
-  const [generating, setGenerating] = useState<string | null>(null) // articleUrl being generated
+  const [generating, setGenerating] = useState<string | null>(null)
   const [generateModal, setGenerateModal] = useState<NewsArticle | null>(null)
+  const [suggestions, setSuggestions] = useState<TopicSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [addedTopics, setAddedTopics] = useState<Set<number>>(new Set())
+  const [addingTopic, setAddingTopic] = useState<number | null>(null)
 
   // Keywords de topics (categorías + títulos)
   const topicKeywords = Array.from(new Set([
@@ -35,11 +42,16 @@ export default function TrendsClient({ initialTopics, campaignKeywords, userId }
     setLoading(true)
     setArticles([])
     setNewsError(null)
+    setSuggestions([])
+    setAddedTopics(new Set())
+
     try {
       const res = await fetch(`/api/news?q=${encodeURIComponent(keyword)}`)
       const data = await res.json()
       if (Array.isArray(data)) {
         setArticles(data)
+        // Auto-generate topic suggestions from articles
+        fetchSuggestions(keyword, data.map((a: NewsArticle) => a.title))
       } else if (data.error) {
         setNewsError(data.error)
       }
@@ -47,6 +59,37 @@ export default function TrendsClient({ initialTopics, campaignKeywords, userId }
       setNewsError(err.message || 'Error de conexión')
     }
     setLoading(false)
+  }
+
+  async function fetchSuggestions(keyword: string, articleTitles: string[]) {
+    setLoadingSuggestions(true)
+    try {
+      const res = await fetch('/api/topics/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, articleTitles }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) setSuggestions(data)
+      }
+    } catch { /* silencioso */ }
+    setLoadingSuggestions(false)
+  }
+
+  async function handleAddTopic(suggestion: TopicSuggestion, idx: number) {
+    setAddingTopic(idx)
+    try {
+      await supabase.from('topics').insert({
+        user_id: userId,
+        title: suggestion.title,
+        description: suggestion.description,
+        category: suggestion.category,
+        status: 'pending',
+      })
+      setAddedTopics(prev => new Set([...prev, idx]))
+    } catch { /* silencioso */ }
+    setAddingTopic(null)
   }
 
   async function handleCreatePost(article: NewsArticle, type: 'carousel' | 'reel') {
@@ -225,6 +268,58 @@ export default function TrendsClient({ initialTopics, campaignKeywords, userId }
             })}
           </div>
         </>
+      )}
+
+      {/* Topic suggestions */}
+      {(loadingSuggestions || suggestions.length > 0) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className="text-indigo-400" />
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">2 Topics sugeridos para tu publicidad</p>
+          </div>
+          {loadingSuggestions ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[0, 1].map(i => (
+                <div key={i} className="h-24 rounded-xl bg-[#111] border border-[#2a2a2a] animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {suggestions.map((s, idx) => (
+                <div key={idx} className="flex flex-col gap-2 p-4 rounded-xl bg-[#0d0d1a] border border-indigo-500/20 hover:border-indigo-500/40 transition">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      {s.category && (
+                        <span className="inline-block text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full mb-1.5">
+                          {s.category}
+                        </span>
+                      )}
+                      <p className="text-sm font-semibold text-slate-200 leading-snug">{s.title}</p>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2">{s.description}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleAddTopic(s, idx)}
+                    disabled={addingTopic === idx || addedTopics.has(idx)}
+                    className={`flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-xs font-medium transition ${
+                      addedTopics.has(idx)
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-default'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'
+                    }`}
+                  >
+                    {addedTopics.has(idx) ? (
+                      <><CheckCircle2 size={12} /> Agregado a Topics</>
+                    ) : addingTopic === idx ? (
+                      <><div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Agregando...</>
+                    ) : (
+                      <><Plus size={12} /> Agregar a Topics</>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* No keyword selected yet */}
