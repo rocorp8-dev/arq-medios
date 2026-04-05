@@ -96,6 +96,50 @@ export default function ContentEditor({ content: initial, initialScenarios, user
     if (tab === 'media' && !mediaLoaded) fetchMedia()
   }, [tab])
 
+  const BANANA_ID = 'ahmgloadmhbhejpghjfcfdiblemhclld'
+  const [bananaStatus, setBananaStatus] = useState<string | null>(null)
+
+  // Polling for Banana Extension Results
+  useEffect(() => {
+    if (content.status !== 'draft' || content.type !== 'carousel') return
+    if (typeof window === 'undefined' || !(window as any).chrome?.runtime) return
+
+    let interval: NodeJS.Timeout
+    const checkStatus = () => {
+      try {
+        (window as any).chrome.runtime.sendMessage(BANANA_ID, { action: 'GET_STATUS' }, async (response: any) => {
+          if (response && response.status) {
+            setBananaStatus(response.status)
+            
+            // Si terminó y hay resultados, sincronizar
+            if (response.status === 'completed' && Array.isArray(response.results) && response.results.length > 0) {
+              console.log('Banana completed! Syncing images...')
+              const syncRes = await fetch('/api/sync-images', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contentId: content.id, results: response.results })
+              })
+              if (syncRes.ok) {
+                // Recargar datos de Supabase para ver las imágenes
+                const { data } = await supabase.from('content').select('*').eq('id', content.id).single()
+                if (data) {
+                  setContent(data as Content)
+                  setBody(Array.isArray(data.body) ? data.body : [])
+                  setBananaStatus('synced')
+                }
+              }
+            }
+          }
+        })
+      } catch (e) {
+        console.error('Error polling Banana:', e)
+      }
+    }
+
+    interval = setInterval(checkStatus, 5000)
+    return () => clearInterval(interval)
+  }, [content.id, content.status, content.type, supabase])
+
   async function fetchMedia() {
     const res = await fetch('/api/media')
     if (res.ok) {
@@ -301,34 +345,60 @@ export default function ContentEditor({ content: initial, initialScenarios, user
     }
   }
 
-  async function handleRegenerateImage(index: number, prompt: string) {
+  async function handleGenerateMissingImagesBanana() {
+    if (typeof window === 'undefined' || !(window as any).chrome?.runtime) {
+      alert('La extensión Banana no está conectada. Asegúrate de tener labs.google/flow abierto.')
+      return
+    }
+
+    const BANANA_ID = 'ahmgloadmhbhejpghjfcfdiblemhclld'
     const slides = [...body] as CarouselSlide[]
-    const originalUrl = slides[index].image_url
-    slides[index] = { ...slides[index], image_url: '' } // Clear while loading
-    setBody(slides)
+    const prompts = slides.map(s => s.image_url ? '' : (s.image_prompt || '')) // Solo los vacíos
+
+    if (prompts.every(p => p === '')) {
+      alert('Ya tienes todas las imágenes generadas.')
+      return
+    }
 
     try {
-      const res = await fetch('/api/generate/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+      (window as any).chrome.runtime.sendMessage(BANANA_ID, {
+        action: 'RUN_BATCH',
+        prompts,
+        options: { delay: 4000, prefix: content.title }
       })
-      const data = await res.json()
-      if (data.url) {
-        const newSlides = [...body] as CarouselSlide[]
-        newSlides[index] = { ...newSlides[index], image_url: data.url }
-        setBody(newSlides)
-      } else {
-        const newSlides = [...body] as CarouselSlide[]
-        newSlides[index] = { ...newSlides[index], image_url: originalUrl }
-        setBody(newSlides)
-        alert('Error al regenerar')
-      }
-    } catch {
-      alert('Error de conexión')
-      const newSlides = [...body] as CarouselSlide[]
-      newSlides[index] = { ...newSlides[index], image_url: originalUrl }
-      setBody(newSlides)
+      alert('Lote enviado a Banana. Esto actualizará los slides automáticamente cuando termine.')
+    } catch (e) {
+      console.error('Error contacting Banana:', e)
+      alert('Error comunicando con la extensión Banana.')
+    }
+  }
+
+  async function handleRegenerateImage(index: number, prompt: string) {
+    if (typeof window === 'undefined' || !(window as any).chrome?.runtime) {
+      alert('La extensión Banana no está conectada. Abre labs.google/flow y asegúrate de tenerla instalada.')
+      return
+    }
+
+    const BANANA_ID = 'ahmgloadmhbhejpghjfcfdiblemhclld'
+    const slides = [...body] as CarouselSlide[]
+    
+    // Construimos un array vacío del tamaño total para que Banana respete la posición de esta imagen
+    const prompts = Array(slides.length).fill('')
+    prompts[index] = prompt
+
+    try {
+      (window as any).chrome.runtime.sendMessage(BANANA_ID, {
+        action: 'RUN_BATCH',
+        prompts,
+        options: { delay: 4000, prefix: content.title }
+      })
+      alert('Prompt enviado al robot de la extensión. Se actualizará solo al terminar.')
+      // Limpiamos la URL temporalmente en la vista
+      slides[index] = { ...slides[index], image_url: '' } 
+      setBody(slides)
+    } catch (e) {
+      console.error('Error contacting Banana:', e)
+      alert('Error comunicando con la extensión Banana.')
     }
   }
 
@@ -404,22 +474,33 @@ export default function ContentEditor({ content: initial, initialScenarios, user
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 bg-[#111] border border-[#2a2a2a] rounded-xl p-1 w-fit">
-        <button onClick={() => setTab('preview')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-          <Eye size={16} /> Vista Previa
-        </button>
-        <button onClick={() => setTab('edit')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'edit' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-          <Pencil size={16} /> Editar
-        </button>
-        <button onClick={() => setTab('media')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'media' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-          <ImageIcon size={16} /> Media Dashboard
-        </button>
+      {/* Tabs Row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 bg-[#111] border border-[#2a2a2a] rounded-xl p-1 w-fit">
+          <button onClick={() => setTab('preview')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'preview' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+            <Eye size={16} /> Vista Previa
+          </button>
+          <button onClick={() => setTab('edit')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'edit' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+            <Pencil size={16} /> Editar
+          </button>
+          <button onClick={() => setTab('media')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'media' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+            <ImageIcon size={16} /> Media Dashboard
+          </button>
+        </div>
+        
+        {/* Action Tabs Right */}
+        {content.type === 'carousel' && tab === 'edit' && (
+          <div className="flex items-center gap-1 w-fit">
+            <button onClick={handleGenerateMissingImagesBanana}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 rounded-lg text-sm font-bold transition hover:bg-indigo-500/20 shadow-xl shadow-indigo-500/10">
+              🤖 Generar Imágenes Faltantes (Banana)
+            </button>
+          </div>
+        )}
       </div>
-
       {/* COMBINE FLOATING BAR */}
       {selectedUrls.length > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a1a]/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl p-4 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-300 w-full max-w-2xl px-6">
@@ -466,6 +547,18 @@ export default function ContentEditor({ content: initial, initialScenarios, user
               <h3 className="text-lg font-bold text-slate-100">Carrusel — {(body as CarouselSlide[]).length} Slides</h3>
             </div>
             <div className="flex gap-2 ml-auto">
+              {bananaStatus === 'running' && (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 mr-2">
+                  <RefreshCw size={12} className="text-indigo-400 animate-spin" />
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Generando en Banana...</span>
+                </div>
+              )}
+              {bananaStatus === 'synced' && (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 mr-2">
+                  <Check size={12} className="text-emerald-400" />
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Imágenes Sincronizadas</span>
+                </div>
+              )}
               {(content.platform === 'both' || content.platform === 'instagram') && <Instagram size={18} className="text-pink-400" />}
               {(content.platform === 'both' || content.platform === 'facebook') && <Facebook size={18} className="text-blue-400" />}
             </div>

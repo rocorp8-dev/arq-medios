@@ -93,8 +93,8 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
     setLoadingNews(false)
   }
 
-  async function handleGenerate(topic: Topic, type: 'carousel' | 'reel') {
-    setGenerating(true)
+  const handleGenerate = async (topic: Topic, type: 'carousel' | 'reel') => {
+    setGenerating(topic.id)
     try {
       const newsContext = selectedArticle
         ? { title: selectedArticle.title, description: selectedArticle.description }
@@ -108,6 +108,33 @@ export default function TopicsClient({ initialTopics, userId }: Props) {
       if (data.id) {
         await supabase.from('topics').update({ status: 'used' }).eq('id', topic.id)
         setTopics(ts => ts.map(t => t.id === topic.id ? { ...t, status: 'used' as const } : t))
+        
+        // If it's a carousel, trigger Banana Extension
+        if (type === 'carousel' && Array.isArray(data.body)) {
+          const BANANA_ID = 'ahmgloadmhbhejpghjfcfdiblemhclld'
+          const prompts = data.body
+            .map((slide: any) => slide.image_prompt)
+            .filter(Boolean)
+
+          if (prompts.length > 0 && typeof window !== 'undefined' && (window as any).chrome?.runtime) {
+            console.log('Sending prompts to Banana Extension:', prompts)
+            try {
+              (window as any).chrome.runtime.sendMessage(BANANA_ID, {
+                action: 'RUN_BATCH',
+                prompts,
+                options: { 
+                  delay: 4000,
+                  prefix: topic.title // Nuevo: prefijo para descargas
+                }
+              }, (response: any) => {
+                console.log('Banana Response:', response)
+              })
+            } catch (e) {
+              console.error('Error contacting Banana extension:', e)
+            }
+          }
+        }
+
         setShowGenerate(null)
         setSelectedArticle(null)
         setNewsArticles([])

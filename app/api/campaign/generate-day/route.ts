@@ -9,30 +9,9 @@ Slide 2 (Valor): El mensaje principal condensado en su forma más directa y úti
 Slide 3 (CTA): Llamada a la acción clara y específica. Ej: "Guarda esto", "Comenta SÍ si te pasó", "Escríbeme HOY". Máximo 12 palabras.
 
 Responde SOLO con un JSON array de 3 objetos, sin texto adicional:
-[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Hyper-detailed photorealistic prompt: main subject in action related to the topic, cinematic lighting, shot on 35mm lens f/1.8 bokeh, ultra-realistic photography 8k RAW. NEVER include text, words or numbers in the image."}]
+[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Write the image prompt EXACTLY following this photorealistic template: 'Hyper-detailed photorealistic 8k RAW photo: [describe subject and action], [describe background]. VERY IMPORTANT: There MUST be a large, bold, highly legible typography organically integrated into the scene that literally reads the exact Spanish words: \\\"[INSERT EXACT SPANISH TITLE HERE]\\\" (DO NOT translate this text to English, write the exact Spanish characters). Cinematic lighting, 35mm lens f/1.8'."}]
 
 El body debe ser conciso y directo. Las design_notes deben indicar color dominante, tipografía y composición visual.`
-
-async function generateImage(prompt: string, apiKey: string) {
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'google/gemini-3-pro-image-preview',
-        messages: [{ role: 'user', content: prompt }],
-        modalities: ['image'],
-        max_tokens: 1000,
-        image_config: { aspect_ratio: '4:5' },
-      }),
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.choices?.[0]?.message?.images?.[0]?.image_url?.url || null
-  } catch {
-    return null
-  }
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -74,19 +53,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Error generando contenido' }, { status: 500 })
     }
 
-    // Generate images if OpenRouter key available
-    const orApiKey = process.env.OPENROUTER_API_KEY
-    if (orApiKey) {
-      const imagePromises = body.map(async (slide: { image_prompt?: string; [key: string]: unknown }) => {
-        if (slide.image_prompt) {
-          const imageUrl = await generateImage(slide.image_prompt, orApiKey)
-          return { ...slide, image_url: imageUrl }
-        }
-        return slide
-      })
-      body = await Promise.all(imagePromises)
-    }
-
     // Update existing content record
     const { data: updated, error } = await supabase
       .from('content')
@@ -99,14 +65,12 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     // Track cost
-    const groqCost = 0.0005
-    const imageCost = body.length * 0.03
     await supabase.from('ai_costs').insert({
       user_id: user.id,
-      model_used: 'Groq Llama 3.3 70B + Gemini Pro Image',
-      type: 'carousel_full',
-      total_cost_usd: groqCost + imageCost,
-      metadata: { contentId, images_count: body.length },
+      model_used: 'Groq Llama 3.3 70B',
+      type: 'carousel_text',
+      total_cost_usd: 0.0005,
+      metadata: { contentId },
     })
 
     return NextResponse.json(updated)

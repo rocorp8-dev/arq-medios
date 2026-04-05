@@ -239,15 +239,16 @@ async function publishCarouselToInstagram(
   const base = `https://graph.facebook.com/v19.0`
   const token = encodeURIComponent(accessToken)
 
-  // Step 1: Create item containers (one per image)
-  const containerIds: string[] = []
-  for (const imageUrl of imageUrls) {
-    const url = `${base}/${igUserId}/media?image_url=${encodeURIComponent(imageUrl)}&is_carousel_item=true&access_token=${token}`
-    const res = await fetch(url, { method: 'POST' })
-    const data = await res.json()
-    if (!res.ok || !data.id) throw new Error(`IG container error: ${JSON.stringify(data)}`)
-    containerIds.push(data.id)
-  }
+  // Step 1: Create item containers in parallel (one per image)
+  const containerIds = await Promise.all(
+    imageUrls.map(async (imageUrl) => {
+      const url = `${base}/${igUserId}/media?image_url=${encodeURIComponent(imageUrl)}&is_carousel_item=true&access_token=${token}`
+      const res = await fetch(url, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok || !data.id) throw new Error(`IG container error: ${JSON.stringify(data)}`)
+      return data.id
+    })
+  )
 
   // Step 2: Create carousel container
   const carouselUrl = `${base}/${igUserId}/media?media_type=CAROUSEL&children=${containerIds.join(',')}&caption=${encodeURIComponent(caption)}&access_token=${token}`

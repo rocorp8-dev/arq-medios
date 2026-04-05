@@ -112,10 +112,35 @@ export default function TrendsClient({ initialTopics, campaignKeywords, userId }
       })
       const data = await res.json()
       if (data.id) {
+        // If it's a carousel, trigger Banana Extension
+        if (type === 'carousel' && Array.isArray(data.content?.body)) {
+          const BANANA_ID = 'ahmgloadmhbhejpghjfcfdiblemhclld'
+          const prompts = data.content.body
+            .map((slide: any) => slide.image_prompt)
+            .filter(Boolean)
+
+          if (prompts.length > 0 && typeof window !== 'undefined' && (window as any).chrome?.runtime) {
+            console.log('Sending trends prompts to Banana Extension:', prompts)
+            try {
+              (window as any).chrome.runtime.sendMessage(BANANA_ID, {
+                action: 'RUN_BATCH',
+                prompts,
+                options: { 
+                  delay: 4000,
+                  prefix: article.title // Nuevo: prefijo basado en la noticia
+                }
+              }, (response: any) => {
+                console.log('Banana Response:', response)
+              })
+            } catch (e) {
+              console.error('Error contacting Banana extension:', e)
+            }
+          }
+        }
         setGenerateModal(null)
         router.push(`/content/${data.id}`)
       } else {
-        alert('Error generando contenido.')
+        alert('Error generando contenido con Cerebras.')
       }
     } catch {
       alert('Error de conexión.')

@@ -11,7 +11,7 @@ Slides 8-9 (Revelación): Un aprendizaje crucial o resumen visual inesperado.
 Slide 10 (CTA): Llamada a la acción clara: "Comenta GUÍA" o "Guarda este post".
 
 Responde SOLO con un JSON array de 10 objetos con este formato:
-[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Act as a Midjourney expert prompt engineer. Write a hyper-detailed photorealistic prompt for this slide specifying: 1) Main subject in action related to the slide topic, 2) Detailed environment and background, 3) Lighting style (e.g. cinematic lighting, volumetric light, golden hour, harsh shadows), 4) Camera and lens type (e.g. shot on 35mm lens, DSLR, f/1.8 bokeh, wide angle), 5) Visual style (e.g. ultra-realistic photography, 8k resolution, RAW photo, editorial style, hyper-detailed). NEVER include text, words, letters or numbers inside the image."}]
+[{"slide_number":1,"title":"...","body":"...","design_notes":"...","image_prompt":"[ENGLISH ONLY] Write the image prompt EXACTLY following this photorealistic template: 'Hyper-detailed photorealistic 8k RAW photo: [describe subject and action], [describe background]. VERY IMPORTANT: There MUST be a large, bold, highly legible typography organically integrated into the scene that literally reads the exact Spanish words: \\\"[INSERT EXACT SPANISH TITLE HERE]\\\" (DO NOT translate this text to English, write the exact Spanish characters). Cinematic lighting, 35mm lens f/1.8'."}]
 
 El body debe ser conciso (máximo 20 palabras por slide). Las design_notes deben incluir indicaciones de color, tipografía y elementos visuales.`
 
@@ -34,9 +34,9 @@ export async function POST(request: Request) {
 
   const { topicId, topicTitle, topicDescription, type, newsContext } = await request.json()
 
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = process.env.CEREBRAS_API_KEY
   if (!apiKey) {
-    // Fallback: generate demo content without Groq
+    // Fallback: generate demo content without Cerebras
     const body = type === 'carousel'
       ? generateDemoCarousel(topicTitle)
       : generateDemoReel(topicTitle)
@@ -55,7 +55,9 @@ export async function POST(request: Request) {
     return NextResponse.json(content)
   }
 
-  // Call Groq API (OpenAI-compatible)
+  const groqApiKey = process.env.GROQ_API_KEY
+  if (!groqApiKey) return NextResponse.json({ error: 'Configura GROQ_API_KEY' }, { status: 500 })
+
   const systemPrompt = type === 'carousel' ? CAROUSEL_PROMPT : REEL_PROMPT
   const newsBlock = newsContext?.title
     ? `\n\nNOTICIA RECIENTE DEL DÍA (basa el contenido ESTRICTAMENTE en esto):\nTitular: ${newsContext.title}\nResumen: ${newsContext.description || ''}\nÁngulo requerido: Explica cómo esta noticia impacta directamente al cliente del nicho.`
@@ -63,10 +65,11 @@ export async function POST(request: Request) {
   const userPrompt = `Tema: ${topicTitle}${topicDescription ? `\nDescripción: ${topicDescription}` : ''}${newsBlock}`
 
   try {
+    console.log('Generating with Groq AI...')
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${groqApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -75,45 +78,30 @@ export async function POST(request: Request) {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.8,
-        max_tokens: 2000,
+        temperature: 0.7,
+        max_tokens: 3000,
+        response_format: { type: 'json_object' }
       }),
     })
 
     if (!groqRes.ok) {
-      const errData = await groqRes.json().catch(() => ({}))
-      console.error('Groq API error:', groqRes.status, errData)
-      // Fallback to demo on API error
-      const body = type === 'carousel'
-        ? generateDemoCarousel(topicTitle)
-        : generateDemoReel(topicTitle)
-
-      const { data: content, error } = await supabase.from('content').insert({
-        user_id: user.id, topic_id: topicId, type, title: topicTitle, body, status: 'draft', platform: 'both',
-      }).select().single()
-
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json(content)
+      throw new Error('Groq API Error')
     }
 
     const groqData = await groqRes.json()
     const raw = groqData.choices?.[0]?.message?.content ?? ''
-    const jsonMatch = raw.match(/\[[\s\S]*\]/)
-    let body = jsonMatch ? JSON.parse(jsonMatch[0]) : (type === 'carousel' ? generateDemoCarousel(topicTitle) : generateDemoReel(topicTitle))
+    
+    let body;
+    try {
+      const parsed = JSON.parse(raw);
+      body = Array.isArray(parsed) ? parsed : (parsed.slides || parsed.content || []);
+    } catch (e) {
+      const jsonMatch = raw.match(/\[[\s\S]*\]/)
+      body = jsonMatch ? JSON.parse(jsonMatch[0]) : null
+    }
 
-    // Generate images for Carousels using OpenRouter (Nano Banana 2 / Gemini 3 Pro Image)
-    const orApiKey = process.env.OPENROUTER_API_KEY
-    if (type === 'carousel' && orApiKey) {
-      console.log('Generating images with OpenRouter (Parallel)...')
-      const imagePromises = body.map(async (slide: any) => {
-        if (slide.image_prompt) {
-          console.log(`Generating image for slide ${slide.slide_number}...`)
-          const imageUrl = await generateImage(slide.image_prompt, orApiKey)
-          return { ...slide, image_url: imageUrl }
-        }
-        return slide
-      })
-      body = await Promise.all(imagePromises)
+    if (!body || body.length === 0) {
+      throw new Error('AI returned empty body')
     }
 
     const { data: content, error } = await supabase.from('content').insert({
@@ -128,53 +116,18 @@ export async function POST(request: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Track AI Costs
-    const groqCost = 0.0005
-    const imageCost = type === 'carousel' ? (body.length * 0.03) : 0
     await supabase.from('ai_costs').insert({
       user_id: user.id,
-      model_used: type === 'carousel' ? 'Groq Llama 3.3 70B + Nano Banana Pro' : 'Groq Llama 3.3 70B',
-      type: type === 'carousel' ? 'carousel_full' : 'reel_script',
-      total_cost_usd: groqCost + imageCost,
-      metadata: { topicId, images_count: type === 'carousel' ? body.length : 0 }
+      model_used: 'Groq Llama 3.3 70B',
+      type: type === 'carousel' ? 'carousel_text' : 'reel_script',
+      total_cost_usd: 0.0001,
+      metadata: { topicId, provider: 'groq' }
     })
 
     return NextResponse.json(content)
   } catch (err) {
-    console.error('Groq generation error:', err)
-    return NextResponse.json({ error: 'Error generating content with Groq' }, { status: 500 })
-  }
-}
-
-async function generateImage(prompt: string, apiKey: string) {
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-3-pro-image-preview',
-        messages: [{ role: 'user', content: prompt }],
-        modalities: ['image'],
-        max_tokens: 1000,
-        image_config: {
-          aspect_ratio: '4:5'
-        }
-      }),
-    })
-
-    if (!res.ok) {
-      console.error('OpenRouter image gen error:', await res.text())
-      return null
-    }
-
-    const data = await res.json()
-    return data.choices?.[0]?.message?.images?.[0]?.image_url?.url || null
-  } catch (err) {
-    console.error('Image generation fetch error:', err)
-    return null
+    console.error('Generation error:', err)
+    return NextResponse.json({ error: 'Error del servidor de IA' }, { status: 500 })
   }
 }
 

@@ -4,11 +4,21 @@ import { useState } from 'react'
 import { format, nextMonday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import JSZip from 'jszip'
-import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle, Send, Download } from 'lucide-react'
+import { Sparkles, X, ChevronDown, ChevronUp, ExternalLink, CheckCircle2, Clock, AlertCircle, Send, Download, Image as ImageIcon } from 'lucide-react'
+import NextImage from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import type { Campaign } from '@/types/database'
 
 interface Scenario { id: string; name: string }
+
+interface SlideBody {
+  slide_number?: number
+  title?: string
+  body?: string
+  design_notes?: string
+  image_url?: string
+  image_prompt?: string
+}
 
 interface ContentDay {
   day: number
@@ -20,6 +30,7 @@ interface ContentDay {
   generated?: boolean
   generating?: boolean
   error?: boolean
+  body?: SlideBody[]
 }
 
 
@@ -61,6 +72,10 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
   // Send campaign state
   const [sendingId, setSendingId] = useState<string | null>(null)
   const [sendResults, setSendResults] = useState<Record<string, Array<'pending' | 'sending' | 'ok' | 'error'>>>({})
+
+  // Preview modal
+  const [previewDay, setPreviewDay] = useState<ContentDay | null>(null)
+  const [previewSlideIndex, setPreviewSlideIndex] = useState(0)
 
   // Generation progress
   const [genState, setGenState] = useState<'idle' | 'planning' | 'generating' | 'done' | 'error'>('idle')
@@ -153,6 +168,10 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
           })
 
           if (genRes.ok) {
+            const dayData = await genRes.json()
+            const prompts = ((dayData.body as SlideBody[]) || []).map(s => s.image_prompt).filter(Boolean)
+            // Eliminamos la llamada auto a Banana desde aquí para no sobrecargar el robot ni lanzar "Lote en ejecución"
+            // El usuario generará las imágenes entrando a la edición de contenido, lo cual es mucho más seguro.
             setGenDays(prev => prev.map((d, idx) => idx === i ? { ...d, generating: false, generated: true } : d))
           } else {
             setGenDays(prev => prev.map((d, idx) => idx === i ? { ...d, generating: false, error: true } : d))
@@ -335,6 +354,7 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
         date: item.scheduled_at,
         contentId: item.id,
         generated: Array.isArray(item.body) && item.body.length > 0,
+        body: Array.isArray(item.body) ? item.body : [],
       }))
       setCampaignDays(prev => ({ ...prev, [campaign.id]: days }))
     }
@@ -410,43 +430,65 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
                 {isExpanded && (
                   <div className="border-t border-[#1a1a1a] px-5 py-4">
                     {isLoading ? (
-                      <div className="py-6 text-center text-slate-500 text-sm">Cargando días...</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                        {Array.from({ length: 7 }).map((_, i) => (
+                          <div key={i} className="rounded-lg bg-[#0d0d0d] border border-[#222] overflow-hidden animate-pulse">
+                            <div className="w-full aspect-[4/5] bg-[#1a1a1a]" />
+                            <div className="p-2.5 space-y-1.5">
+                              <div className="h-2 bg-[#1a1a1a] rounded w-8" />
+                              <div className="h-2 bg-[#1a1a1a] rounded w-full" />
+                              <div className="h-2 bg-[#1a1a1a] rounded w-3/4" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     ) : days && days.length > 0 ? (
                       <div className="space-y-3">
                         {/* 7-day grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
                           {days.map((day, idx) => {
                             const result = sendResults[c.id]?.[idx]
+                            const thumb = day.body?.find(s => s.image_url && !s.image_url.startsWith('data:'))?.image_url
                             return (
-                              <a
+                              <div
                                 key={day.contentId}
-                                href={`/content/${day.contentId}`}
-                                className="group flex flex-col gap-1.5 p-3 rounded-lg bg-[#0d0d0d] border border-[#222] hover:border-indigo-500/40 hover:bg-[#151520] transition cursor-pointer"
+                                onClick={() => { setPreviewDay(day); setPreviewSlideIndex(0) }}
+                                className="group flex flex-col rounded-lg bg-[#0d0d0d] border border-[#222] hover:border-indigo-500/40 hover:bg-[#151520] transition cursor-pointer overflow-hidden"
                               >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-semibold text-slate-500">{DAYS_ES[idx % 7]}</span>
-                                  {result === 'ok' ? (
-                                    <CheckCircle2 size={13} className="text-emerald-400" />
-                                  ) : result === 'sending' ? (
-                                    <div className="w-3 h-3 border border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                                  ) : result === 'error' ? (
-                                    <AlertCircle size={13} className="text-red-400" />
-                                  ) : day.generated ? (
-                                    <CheckCircle2 size={13} className="text-emerald-500/50" />
-                                  ) : (
-                                    <Clock size={13} className="text-slate-600" />
-                                  )}
-                                </div>
-                                {day.date && (
-                                  <span className="text-xs text-slate-600">
-                                    {format(new Date(day.date), 'dd MMM', { locale: es })}
-                                  </span>
+                                {/* Thumbnail */}
+                                {thumb ? (
+                                  <div className="relative w-full aspect-[4/5] bg-[#0a0a0a]">
+                                    <NextImage src={thumb} alt={day.title} fill className="object-cover" sizes="160px" />
+                                  </div>
+                                ) : (
+                                  <div className="w-full aspect-[4/5] bg-[#0a0a0a] flex items-center justify-center">
+                                    <ImageIcon size={20} className="text-slate-700" />
+                                  </div>
                                 )}
-                                <p className="text-xs text-slate-300 font-medium line-clamp-2 leading-tight">{day.title}</p>
-                                <div className="flex items-center gap-1 text-indigo-400 opacity-0 group-hover:opacity-100 transition text-xs mt-auto">
-                                  <ExternalLink size={11} /> Editar
+                                {/* Info */}
+                                <div className="p-2.5 flex flex-col gap-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-slate-500">{DAYS_ES[idx % 7]}</span>
+                                    {result === 'ok' ? (
+                                      <CheckCircle2 size={13} className="text-emerald-400" />
+                                    ) : result === 'sending' ? (
+                                      <div className="w-3 h-3 border border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                                    ) : result === 'error' ? (
+                                      <AlertCircle size={13} className="text-red-400" />
+                                    ) : day.generated ? (
+                                      <CheckCircle2 size={13} className="text-emerald-500/50" />
+                                    ) : (
+                                      <Clock size={13} className="text-slate-600" />
+                                    )}
+                                  </div>
+                                  {day.date && (
+                                    <span className="text-xs text-slate-600">
+                                      {format(new Date(day.date), 'dd MMM', { locale: es })}
+                                    </span>
+                                  )}
+                                  <p className="text-xs text-slate-300 font-medium line-clamp-2 leading-tight">{day.title}</p>
                                 </div>
-                              </a>
+                              </div>
                             )
                           })}
                         </div>
@@ -508,6 +550,92 @@ export default function CampaignsClient({ initialCampaigns, scenarios, userId }:
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewDay && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setPreviewDay(null)}
+        >
+          <div
+            className="bg-[#111] rounded-2xl border border-[#2a2a2a] w-full max-w-sm shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-[#1a1a1a]">
+              <div className="min-w-0">
+                <p className="text-xs text-slate-500">{DAYS_ES[(previewDay.day - 1) % 7]}</p>
+                <h3 className="text-sm font-bold text-slate-100 truncate">{previewDay.title}</h3>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <a
+                  href={`/content/${previewDay.contentId}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-400 border border-indigo-500/30 rounded-lg hover:bg-indigo-500/10 transition"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <ExternalLink size={11} /> Editar
+                </a>
+                <button onClick={() => setPreviewDay(null)} className="p-1.5 text-slate-500 hover:text-slate-300 transition">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Slide content */}
+            {previewDay.body && previewDay.body.length > 0 ? (() => {
+              const slide = previewDay.body![previewSlideIndex]
+              const imgUrl = slide.image_url && !slide.image_url.startsWith('data:') ? slide.image_url : null
+              return (
+                <div className="p-4 space-y-3">
+                  {imgUrl ? (
+                    <div className="relative w-full aspect-[4/5] rounded-xl overflow-hidden bg-[#0a0a0a]">
+                      <NextImage src={imgUrl} alt={slide.title || ''} fill className="object-cover" sizes="340px" />
+                      <a
+                        href={imgUrl}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="absolute top-2 right-2 p-1.5 bg-black/60 backdrop-blur-sm rounded-lg text-white hover:bg-black/80 transition"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <Download size={13} />
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="w-full aspect-[4/5] rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] flex flex-col items-center justify-center gap-2 text-slate-600">
+                      <ImageIcon size={32} />
+                      <p className="text-xs">Imagen pendiente de Banana</p>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    {slide.title && <p className="text-sm font-bold text-slate-100">{slide.title}</p>}
+                    {slide.body && <p className="text-xs text-slate-400 leading-relaxed">{slide.body}</p>}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setPreviewSlideIndex(i => Math.max(0, i - 1))}
+                      disabled={previewSlideIndex === 0}
+                      className="px-3 py-1.5 text-xs text-slate-400 bg-[#1a1a1a] border border-[#333] rounded-lg hover:bg-[#222] disabled:opacity-30 transition"
+                    >
+                      ← Anterior
+                    </button>
+                    <span className="text-xs text-slate-500">{previewSlideIndex + 1} / {previewDay.body!.length}</span>
+                    <button
+                      onClick={() => setPreviewSlideIndex(i => Math.min(previewDay.body!.length - 1, i + 1))}
+                      disabled={previewSlideIndex === previewDay.body!.length - 1}
+                      className="px-3 py-1.5 text-xs text-slate-400 bg-[#1a1a1a] border border-[#333] rounded-lg hover:bg-[#222] disabled:opacity-30 transition"
+                    >
+                      Siguiente →
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : (
+              <div className="p-8 text-center text-slate-500 text-sm">No hay slides generados aún</div>
+            )}
+          </div>
         </div>
       )}
 
